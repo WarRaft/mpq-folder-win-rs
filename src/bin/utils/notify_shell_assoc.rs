@@ -1,4 +1,4 @@
-use blp_thumb_win::log::log;
+use mpq_folder_win::log::log;
 use windows::Win32::UI::Shell::{SHCNE_ASSOCCHANGED, SHCNF_IDLIST, SHChangeNotify};
 
 pub fn notify_shell_assoc(reason: &str) {

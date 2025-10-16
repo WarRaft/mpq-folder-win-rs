@@ -7,7 +7,7 @@ need() { command -v "$1" &>/dev/null || { echo "❌ Требуется '$1'"; ex
 
 # ---- Project metadata ----
 CRATE_NAME="${CRATE_NAME:-mpq-folder-win}"
-LIB_NAME="${LIB_NAME:-blp_thumb_win}"            # -> blp_thumb_win.dll
+LIB_NAME="${LIB_NAME:-mpq_folder_win}"            # -> mpq_folder_win.dll
 BIN_NAME="${BIN_NAME:-mpq-folder-win-installer}"      # -> mpq-folder-win-installer.exe
 
 # ---- Profile ----

@@ -6,10 +6,10 @@ authors = ["nazarpunk <nazarpunk@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/WarRaft/mpq-folder-win-rs"
 readme = "README.md"
-keywords = ["blp", "warcraft", "image", "texture"]
-categories = ["encoding", "graphics"]
+keywords = ["mpq", "warcraft", "archive", "shell"]
+categories = ["filesystem"]
 description = """
-Windows thumbnail provider (COM DLL) for Blizzard BLP image format.
+Windows shell handler (COM DLL) that exposes Blizzard MPQ archives as Explorer folders.
 Includes a separate CLI installer tool for easy registration/unregistration.
 """
 
@@ -17,7 +17,9 @@ Includes a separate CLI installer tool for easy registration/unregistration.
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
     "Win32_System_Ole",
+    "Win32_System_Memory",
     "Win32_Storage_FileSystem",
     "Win32_Graphics_Gdi",
     "Win32_UI_Shell",
@@ -37,7 +39,6 @@ windows = { version = "0.62.2", features = [
 windows-core = "0.62.2"
 windows-implement = "0.60.2"
 widestring = "1.2.1"
-blp = "0.1.32"
 dialoguer = "0.12.0"
 winreg = "0.55.0"
 windows-result = "0.4.1"
@@ -51,7 +52,7 @@ winresource = "0.1.23"
 # Library section (the COM DLL)
 # ------------------------------
 [lib]
-name = "blp_thumb_win"
+name = "mpq_folder_win"
 crate-type = ["cdylib", "rlib"]
 
 # ------------------------------

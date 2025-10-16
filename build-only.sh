@@ -42,7 +42,7 @@ echo "==> Building installer only (embeds ./bin/$(basename "${DLL_PATH}") via in
 printf "phase=installer ts=%s\n" "$(date +%s%N)" >> assets/build-report.txt
 
 # Set env only for the installer build so build.rs knows to embed resources
-BLP_INSTALLER=1 cargo build --target "${TARGET_TRIPLE}" --${PROFILE} --bin "${BIN_NAME}"
+MPQ_INSTALLER=1 cargo build --target "${TARGET_TRIPLE}" --${PROFILE} --bin "${BIN_NAME}"
 
 # Check EXE
 [ -f "${EXE_PATH}" ] || { echo "ERR: EXE not found after installer build: ${EXE_PATH}"; exit 1; }

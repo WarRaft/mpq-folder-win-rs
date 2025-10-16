@@ -1,4 +1,4 @@
-use blp_thumb_win::log::log;
+use mpq_folder_win::log::log;
 use std::io;
 use std::process::{Command, Stdio};
 use std::thread::sleep;

@@ -1,15 +1,11 @@
 use crate::utils::notify_shell_assoc::notify_shell_assoc;
 
-use blp_thumb_win::log::log;
-use blp_thumb_win::utils::guid::GuidExt;
-use blp_thumb_win::{
-    CLSID_BLP_THUMB, DEFAULT_EXT, DEFAULT_PROGID, SHELL_PREVIEW_HANDLER_CATID, SHELL_THUMB_HANDLER_CATID,
-};
+use mpq_folder_win::log::log;
+use mpq_folder_win::utils::guid::GuidExt;
+use mpq_folder_win::{CLSID_MPQ_FOLDER, DEFAULT_PROGID, SHELL_PREVIEW_HANDLER_CATID, SHELL_THUMB_HANDLER_CATID, SUPPORTED_EXTENSIONS};
 use std::io;
-use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_SET_VALUE};
 use winreg::RegKey;
-
-const LEGACY_PREVIEW_CLSID: &str = "{8FC2C3AB-5B0B-4DB0-BC2E-9D6DBFBB8EAA}";
+use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_SET_VALUE};
 
 pub fn uninstall() -> io::Result<()> {
     if let Err(err) = uninstall_inner() {
@@ -22,10 +18,9 @@ fn uninstall_inner() -> io::Result<()> {
     log("Uninstall (current user): start — removing shell bindings.");
 
     let root = RegKey::predef(HKEY_CURRENT_USER);
-    let ext = DEFAULT_EXT;
     let progid = DEFAULT_PROGID;
 
-    let thumb_clsid = CLSID_BLP_THUMB.to_braced_upper();
+    let handler_clsid = CLSID_MPQ_FOLDER.to_braced_upper();
     let thumb_catid = SHELL_THUMB_HANDLER_CATID.to_braced_upper();
     let preview_catid = SHELL_PREVIEW_HANDLER_CATID.to_braced_upper();
 
@@ -62,49 +57,32 @@ fn uninstall_inner() -> io::Result<()> {
         del_tree(&target)
     };
 
-    // Shell Extensions Approved entries
     let approved_path = r"Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Approved";
-    del_value(approved_path, thumb_clsid.as_str())?;
-    del_value(approved_path, LEGACY_PREVIEW_CLSID)?;
+    del_value(approved_path, handler_clsid.as_str())?;
 
-    // ShellEx bindings (.blp / ProgID / SFA)
-    remove_shellex(&format!(r"Software\Classes\{}", ext), &thumb_catid)?;
-    remove_shellex(&format!(r"Software\Classes\{}", ext), &preview_catid)?;
+    // ProgID bindings
     remove_shellex(&format!(r"Software\Classes\{}", progid), &thumb_catid)?;
     remove_shellex(&format!(r"Software\Classes\{}", progid), &preview_catid)?;
-    remove_shellex(
-        &format!(r"Software\Classes\SystemFileAssociations\{}", ext),
-        &thumb_catid,
-    )?;
-    remove_shellex(
-        &format!(r"Software\Classes\SystemFileAssociations\{}", ext),
-        &preview_catid,
-    )?;
+    remove_shellex(&format!(r"Software\Classes\{}", progid), "StorageHandler")?;
+    del_value(&format!(r"Software\Classes\{}", progid), "CLSID")?;
+    del_value(&format!(r"Software\Classes\{}", progid), "FriendlyTypeName")?;
+    del_tree(&format!(r"Software\Classes\{}\PersistentHandler", progid))?;
+    del_tree(&format!(r"Software\Classes\{}\shell", progid))?;
 
-    // Explorer handler lists
-    del_value(
-        r"Software\Microsoft\Windows\CurrentVersion\Explorer\ThumbnailHandlers",
-        ext,
-    )?;
-    del_value(
-        r"Software\Microsoft\Windows\CurrentVersion\PreviewHandlers",
-        LEGACY_PREVIEW_CLSID,
-    )?;
-    del_value(
-        r"Software\Microsoft\Windows\CurrentVersion\PreviewHandlers",
-        thumb_clsid.as_str(),
-    )?;
+    for ext in SUPPORTED_EXTENSIONS {
+        remove_shellex(&format!(r"Software\Classes\{}", ext), &thumb_catid)?;
+        remove_shellex(&format!(r"Software\Classes\{}", ext), &preview_catid)?;
+        remove_shellex(&format!(r"Software\Classes\{}", ext), "StorageHandler")?;
+        del_tree(&format!(r"Software\Classes\{}\shell", ext))?;
+        remove_shellex(&format!(r"Software\Classes\SystemFileAssociations\{}", ext), &thumb_catid)?;
+        remove_shellex(&format!(r"Software\Classes\SystemFileAssociations\{}", ext), &preview_catid)?;
+        remove_shellex(&format!(r"Software\Classes\SystemFileAssociations\{}", ext), "StorageHandler")?;
 
-    // CLSID trees (.thumb and legacy preview)
-    del_tree(&format!(r"Software\Classes\CLSID\{}", thumb_clsid))?;
-    del_tree(&format!(r"Software\Classes\CLSID\{}", LEGACY_PREVIEW_CLSID))?;
+        del_value(r"Software\Microsoft\Windows\CurrentVersion\Explorer\ThumbnailHandlers", ext)?;
+        del_tree(&format!(r"Software\Classes\{}\PersistentHandler", ext))?;
+    }
 
-    // Legacy AppID remnants
-    del_tree(&format!(r"Software\Classes\AppID\{}", LEGACY_PREVIEW_CLSID))?;
-    del_tree(r"Software\Classes\AppID\prevhost.exe")?;
-
-    // File-type persistent handler glue
-    del_tree(&format!(r"Software\Classes\{}\PersistentHandler", ext))?;
+    del_tree(&format!(r"Software\Classes\CLSID\{}", handler_clsid))?;
 
     notify_shell_assoc("uninstall");
     log("Uninstall completed (HKCU). Thumbnail preview bindings removed.");

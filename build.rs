@@ -1,12 +1,12 @@
 // Windows resource pipeline for the *installer phase only*.
 //
 // What this does:
-// 1) Runs only on Windows targets AND only when env BLP_INSTALLER=1 is set.
+// 1) Runs only on Windows targets AND only when env MPQ_INSTALLER=1 is set.
 // 2) Re-run trigger is a single text file (log). Your outer script appends a timestamp to it.
 // 3) If assets/generated/app.ico exists -> reuse it;
 //    else if assets/icon.png exists -> generate a multi-size ICO once.
 // 4) Always attempt to embed VERSIONINFO (from Cargo package env) and ICON (if present).
-// 5) No cargo warnings: all messages go to the log file (BLP_BUILD_REPORT or assets/build-report.txt).
+// 5) No cargo warnings: all messages go to the log file (MPQ_BUILD_REPORT or assets/build-report.txt).
 // 6) We do NOT probe or set resource compilers here. winresource crate uses RC/windres/llvm-rc
 //    as configured by your toolchain/.cargo config. If it's missing, we log the error and continue.
 //
@@ -86,7 +86,7 @@ fn generate_ico(src_png: &Path, out_ico: &Path) -> io::Result<()> {
 fn main() {
     // Resolve repo root and the log path (allow overriding via env).
     let repo = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let report_path = env::var_os("BLP_BUILD_REPORT")
+    let report_path = env::var_os("MPQ_BUILD_REPORT")
         .map(PathBuf::from)
         .map(|p| if p.is_absolute() { p } else { repo.join(p) })
         .unwrap_or_else(|| repo.join("assets/build-report.txt"));
@@ -96,7 +96,7 @@ fn main() {
 
     // Only care about Windows target and only in the installer phase.
     let is_windows_target = env::var("CARGO_CFG_TARGET_OS").ok().as_deref() == Some("windows");
-    let is_installer = env::var_os("BLP_INSTALLER").is_some();
+    let is_installer = env::var_os("MPQ_INSTALLER").is_some();
     if !is_windows_target || !is_installer {
         // No logging here to keep the file quiet when building the lib phase.
         return;

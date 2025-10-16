@@ -1,11 +1,11 @@
 #![cfg(windows)]
 
-use blp_thumb_win::log::log;
+use mpq_folder_win::log::log;
 use std::{env, io, io::Write};
 
 // Embedded DLL that you copy into ./bin/ at build time.
 // The EXE will re-materialize it under %LOCALAPPDATA%\mpq-folder-win\
-static DLL_BYTES: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/bin/blp_thumb_win.dll"));
+static DLL_BYTES: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/bin/mpq_folder_win.dll"));
 
 // Single source of truth from the library (your keys module)
 use crate::actiions::dialog::{Action, action_choose, action_execute};

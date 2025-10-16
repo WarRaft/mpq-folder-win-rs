@@ -3,10 +3,10 @@ use crate::actiions::install::install;
 use crate::actiions::restart_explorer::restart_explorer;
 use crate::actiions::toggle_logging::toggle_logging;
 use crate::actiions::uninstall::uninstall;
-use blp_thumb_win::log::log_enabled;
 use dialoguer::Select;
 use dialoguer::console::{Term, style};
 use dialoguer::theme::ColorfulTheme;
+use mpq_folder_win::log::log_enabled;
 use std::io;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,7 +47,7 @@ pub fn action_choose() -> io::Result<(Action, String)> {
     let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
 
     let idx = Select::with_theme(&theme())
-        .with_prompt("BLP Thumbnail Provider installer")
+        .with_prompt("MPQ Folder Handler installer")
         .items(&label_refs)
         .default(0)
         .interact_on(&Term::stdout())?;

@@ -1,6 +1,6 @@
-use crate::class_factory::BlpClassFactory;
+use crate::class_factory::MpqClassFactory;
 use crate::utils::guid::GuidExt;
-use crate::{CLASS_E_CLASSNOTAVAILABLE, CLSID_BLP_THUMB, DLL_LOCK_COUNT};
+use crate::{CLASS_E_CLASSNOTAVAILABLE, CLSID_MPQ_FOLDER, DLL_LOCK_COUNT};
 // .to_braced_upper() for &GUID
 
 use std::ffi::c_void;
@@ -64,11 +64,7 @@ pub extern "system" fn DllGetClassObject(rclsid: *const GUID, riid: *const GUID,
 
     // Pretty-print CLSID/IID
     if let Some(g) = unsafe { rclsid.as_ref() } {
-        let name = if *g == CLSID_BLP_THUMB {
-            "CLSID_BLP_THUMB"
-        } else {
-            "CLSID(unknown)"
-        };
+        let name = if *g == CLSID_MPQ_FOLDER { "CLSID_MPQ_FOLDER" } else { "CLSID(unknown)" };
         let _ = log(format!("DllGetClassObject rclsid={} {}", name, g.to_braced_upper()));
     } else {
         let _ = log("DllGetClassObject rclsid=NULL");
@@ -104,9 +100,9 @@ pub extern "system" fn DllGetClassObject(rclsid: *const GUID, riid: *const GUID,
         }
     };
 
-    let factory = if r == CLSID_BLP_THUMB {
-        let _ = log("DllGetClassObject: class match -> Thumbnail provider");
-        BlpClassFactory::new()
+    let factory = if r == CLSID_MPQ_FOLDER {
+        let _ = log("DllGetClassObject: class match -> MPQ shell provider");
+        MpqClassFactory::new()
     } else {
         let _ = log("DllGetClassObject: CLASS_E_CLASSNOTAVAILABLE");
         return CLASS_E_CLASSNOTAVAILABLE;

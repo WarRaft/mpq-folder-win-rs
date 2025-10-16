@@ -1,7 +1,8 @@
+pub mod archive;
 mod class_factory;
 mod dll_export;
 pub mod log;
-mod thumbnail_provider;
+mod mpq_shell_provider;
 pub mod utils;
 
 #[cfg(not(target_pointer_width = "64"))]
@@ -16,13 +17,19 @@ const CLASS_E_CLASSNOTAVAILABLE: HRESULT = HRESULT(0x80040111u32 as i32);
 
 static DLL_LOCK_COUNT: AtomicU32 = AtomicU32::new(0);
 
-#[derive(Default)]
 struct ProviderState {
     path_utf8: Option<String>,
     stream_data: Option<Arc<[u8]>>,
+    archive: Arc<archive::MpqArchiveDescriptor>,
 }
 
-/// Common constants for BLP Thumbnail Provider registration.
+impl Default for ProviderState {
+    fn default() -> Self {
+        Self { path_utf8: None, stream_data: None, archive: Arc::new(archive::MpqArchiveDescriptor::placeholder("MPQ handler not initialized")) }
+    }
+}
+
+/// Common constants for MPQ Folder handler registration.
 /// Shared between the COM DLL and the installer. No duplicated string CLSIDs.
 use windows::core::GUID;
 
@@ -37,13 +44,13 @@ pub const SHELL_THUMB_HANDLER_CATID: GUID = GUID::from_u128(0xE357FCCD_A995_4576
 pub const SHELL_PREVIEW_HANDLER_CATID: GUID = GUID::from_u128(0x8895B1C6_B41F_4C1C_A562_0D564250836F);
 
 /// CLSID of this provider. Must match DLL exports and registry bindings.
-pub const CLSID_BLP_THUMB: GUID = GUID::from_u128(0xB2E9A1F3_7C5D_4E2B_96A1_2C3D4E5F6A7B);
+pub const CLSID_MPQ_FOLDER: GUID = GUID::from_u128(0x45F174D2_D3E0_4A6C_9255_3D4F6510F3DA);
 
-/// ProgID bound to `.blp` (HKCR\WarRaft.BLP; HKCR\.blp -> WarRaft.BLP).
-pub const DEFAULT_PROGID: &str = "WarRaft.BLP";
+/// ProgID bound to `.mpq` family (HKCR\WarRaft.MPQArchive; HKCR\.mpq -> WarRaft.MPQArchive).
+pub const DEFAULT_PROGID: &str = "WarRaft.MPQArchive";
 
-/// File extension this provider supports.
-pub const DEFAULT_EXT: &str = ".blp";
+/// File extensions supported by the handler.
+pub const SUPPORTED_EXTENSIONS: &[&str] = &[".mpq", ".w3m", ".w3x"];
 
 /// Human-friendly provider name (HKCR\CLSID\{CLSID}\(Default)).
-pub const FRIENDLY_NAME: &str = "BLP Thumbnail Provider";
+pub const FRIENDLY_NAME: &str = "MPQ Archive Folder Handler";

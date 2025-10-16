@@ -9,7 +9,7 @@ https://t.me/neuralforum/7333097
 # Logo
 
 ```
-/i -s Telegram sticker design: a pirate skull in a tattered tricorn hat gives two thumbs up, framed by cracked ship wheels and frayed ropes. A single bold inscription "BLP THUMB" is integrated into the artwork on a torn blood-stained banner. White skull with deep shadows, cracked bone, worn teeth; glowing hollow eyes with faint smoke rising. Subtle accents: crimson red (banner stains), muted cyan (rope), steel blue (wheel), metallic gold (tooth, hat trim). Dark, gritty, high-contrast shading, cursed pirate vibe. Black background with thick white outline, classic sticker style. Ominous and iconic.
+/i -s Telegram sticker design: a pirate skull in a tattered tricorn hat gives two thumbs up, framed by cracked ship wheels and frayed ropes. A single bold inscription "MPQ FOLDER" is integrated into the artwork on a torn blood-stained banner. White skull with deep shadows, cracked bone, worn teeth; glowing hollow eyes with faint smoke rising. Subtle accents: crimson red (banner stains), muted cyan (rope), steel blue (wheel), metallic gold (tooth, hat trim). Dark, gritty, high-contrast shading, cursed pirate vibe. Black background with thick white outline, classic sticker style. Ominous and iconic.
 ```
 
 # Bg

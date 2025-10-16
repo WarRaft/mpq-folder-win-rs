@@ -1,6 +1,6 @@
 use crate::DLL_LOCK_COUNT;
 use crate::log::log;
-use crate::thumbnail_provider::BlpThumbProvider;
+use crate::mpq_shell_provider::MpqShellProvider;
 use crate::utils::guid::GuidExt;
 use std::ffi::c_void;
 use std::ptr::null_mut;
@@ -11,6 +11,8 @@ use windows_implement::implement;
 
 #[inline]
 fn iid_name(iid: &GUID) -> &'static str {
+    use windows::Win32::System::Com::IPersistFile;
+    use windows::Win32::System::Com::StructuredStorage::IStorage;
     use windows::Win32::UI::Shell::{IInitializeWithItem, IThumbnailProvider, PropertiesSystem::IInitializeWithFile, PropertiesSystem::IInitializeWithStream};
     use windows_core::Interface;
     if *iid == <IUnknown as Interface>::IID {
@@ -23,6 +25,10 @@ fn iid_name(iid: &GUID) -> &'static str {
         "IInitializeWithStream"
     } else if *iid == <IInitializeWithFile as Interface>::IID {
         "IInitializeWithFile"
+    } else if *iid == <IStorage as Interface>::IID {
+        "IStorage"
+    } else if *iid == <IPersistFile as Interface>::IID {
+        "IPersistFile"
     } else {
         "UnknownIID"
     }
@@ -37,17 +43,17 @@ fn ptr_hex<T>(p: *const T) -> String {
 }
 
 #[implement(windows::Win32::System::Com::IClassFactory)]
-pub struct BlpClassFactory {
+pub struct MpqClassFactory {
     _placeholder: (),
 }
 
-impl BlpClassFactory {
+impl MpqClassFactory {
     pub fn new() -> Self {
         Self { _placeholder: () }
     }
 }
 
-impl IClassFactory_Impl for BlpClassFactory_Impl {
+impl IClassFactory_Impl for MpqClassFactory_Impl {
     #[allow(non_snake_case)]
     fn CreateInstance(
         &self,
@@ -56,6 +62,8 @@ impl IClassFactory_Impl for BlpClassFactory_Impl {
         ppv: *mut *mut c_void,
     ) -> windows::core::Result<()> {
         use windows::Win32::Foundation::{E_NOINTERFACE, E_POINTER};
+        use windows::Win32::System::Com::IPersistFile;
+        use windows::Win32::System::Com::StructuredStorage::IStorage;
         use windows::Win32::UI::Shell::PropertiesSystem::{IInitializeWithFile, IInitializeWithStream};
         use windows::Win32::UI::Shell::{IInitializeWithItem, IThumbnailProvider};
         use windows::core::{Error, IUnknown, Interface};
@@ -82,8 +90,8 @@ impl IClassFactory_Impl for BlpClassFactory_Impl {
 
         // Construct the concrete object
         let unk: IUnknown = {
-            log("IClassFactory::CreateInstance new=BlpThumbProvider");
-            BlpThumbProvider::new().into()
+            log("IClassFactory::CreateInstance new=MpqShellProvider");
+            MpqShellProvider::new().into()
         };
 
         unsafe {
@@ -106,6 +114,16 @@ impl IClassFactory_Impl for BlpClassFactory_Impl {
             if *riid == <IInitializeWithFile as Interface>::IID {
                 log("IClassFactory::CreateInstance returning IInitializeWithFile");
                 *ppv = unk.cast::<IInitializeWithFile>()?.into_raw();
+                return Ok(());
+            }
+            if *riid == <IStorage as Interface>::IID {
+                log("IClassFactory::CreateInstance returning IStorage");
+                *ppv = unk.cast::<IStorage>()?.into_raw();
+                return Ok(());
+            }
+            if *riid == <IPersistFile as Interface>::IID {
+                log("IClassFactory::CreateInstance returning IPersistFile");
+                *ppv = unk.cast::<IPersistFile>()?.into_raw();
                 return Ok(());
             }
             if *riid == <IUnknown as Interface>::IID {

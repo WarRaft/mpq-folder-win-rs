@@ -1,12 +1,10 @@
 use std::path::PathBuf;
 use std::{env, fs, io};
 
-use blp_thumb_win::log::log;
+use mpq_folder_win::log::log;
 
-use blp_thumb_win::utils::guid::GuidExt;
-use blp_thumb_win::CLSID_BLP_THUMB;
-
-const LEGACY_PREVIEW_CLSID: &str = "{8FC2C3AB-5B0B-4DB0-BC2E-9D6DBFBB8EAA}";
+use mpq_folder_win::CLSID_MPQ_FOLDER;
+use mpq_folder_win::utils::guid::GuidExt;
 use winreg::RegKey;
 use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_SET_VALUE};
 
@@ -36,10 +34,7 @@ fn clear_cache_inner() -> io::Result<()> {
         let path = r"Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Cached";
         match root.open_subkey_with_flags(path, KEY_READ | KEY_SET_VALUE) {
             Ok(key) => {
-                let clsids = [
-                    CLSID_BLP_THUMB.to_braced_upper(),
-                    LEGACY_PREVIEW_CLSID.to_string(),
-                ];
+                let clsids = [CLSID_MPQ_FOLDER.to_braced_upper()];
                 let mut total_removed = 0usize;
 
                 for clsid in clsids {
