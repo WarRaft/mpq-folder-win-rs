@@ -1,6 +1,0 @@
-phase=installer ts=1760533661437698000
-[1760533662] === build.rs start (installer: Windows resources) ===
-[1760533662] Reusing ICO: /Users/nazarpunk/RustroverProjects/mpq-folder-win-rs/assets/generated/app.ico
-[1760533662] ICON set = /Users/nazarpunk/RustroverProjects/mpq-folder-win-rs/assets/generated/app.ico
-[1760533662] Resource embedding OK (VERSIONINFO + optional ICON).
-[1760533662] === build.rs done ===
