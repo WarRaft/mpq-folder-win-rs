@@ -25,7 +25,7 @@ pub fn uninstall() -> io::Result<()> {
         log(format!("Uninstall failed: {}", err));
         return Err(err);
     }
-    println!("\n✓ Uninstallation completed successfully!");
+    println!("\n Uninstallation completed successfully!");
     println!("  → Registry keys removed from HKLM");
     println!("  → DLL removed from C:\\Program Files\\mpq-folder-win\\");
     println!("\nRecommended next step:");

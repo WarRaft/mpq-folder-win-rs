@@ -27,7 +27,7 @@ pub fn install() -> io::Result<()> {
         log(format!("Install failed: {err}"));
         return Err(err);
     }
-    println!("\n✓ Installation completed successfully!");
+    println!("\n Installation completed successfully!");
     println!("  → DLL installed to C:\\Program Files\\mpq-folder-win\\");
     println!("  → Registry keys written to HKLM");
     println!("\nRecommended next steps:");
@@ -62,6 +62,8 @@ fn install_inner() -> io::Result<()> {
     let handler_clsid = CLSID_MPQ_FOLDER.to_braced_upper();
     let thumb_catid = SHELL_THUMB_HANDLER_CATID.to_braced_upper();
     let preview_catid = SHELL_PREVIEW_HANDLER_CATID.to_braced_upper();
+    // StorageHandler GUID used by ZIP/CAB
+    let storage_handler_guid = "{E88DCCE0-B7B3-11d1-A9F0-00AA0060FA31}";
 
     log(format!("Using CLSID={} categories: THUMB={} PREVIEW={}", handler_clsid, thumb_catid, preview_catid));
 
@@ -82,13 +84,18 @@ fn install_inner() -> io::Result<()> {
         inproc.set_default(dll_path.as_os_str())?;
         inproc.set("ThreadingModel", "Apartment")?;
         let _ = cls.sub(&format!(r"Implemented Categories\{}", thumb_catid))?;
-        // IShellFolder registration for Explorer integration
-    let shellfolder = cls.sub("ShellFolder")?;
-    shellfolder.set("Attributes", 0x20000000u32)?; // SFGAO_FOLDER
-    shellfolder.set("WantsFORPARSING", "")?;
-    shellfolder.set("HideOnDesktopPerUser", "")?;
-    shellfolder.set("SortOrderIndex", 66u32)?;
-    shellfolder.set("InfoTip", "Displays contents of MPQ archives")?;
+        // IShellFolder registration for Explorer integration (folder behavior like ZIP)
+        let shellfolder = cls.sub("ShellFolder")?;
+        // SFGAO_FOLDER | SFGAO_FILESYSTEM | SFGAO_FILESYSANCESTOR | SFGAO_HASSUBFOLDER | SFGAO_BROWSABLE
+        shellfolder.set("Attributes", 0xF0400044u32)?;
+        shellfolder.set("WantsFORPARSING", "")?;
+        shellfolder.set("HideOnDesktopPerUser", "")?;
+        shellfolder.set("SortOrderIndex", 66u32)?;
+        shellfolder.set("InfoTip", "Displays contents of MPQ archives")?;
+        // StorageHandler GUID for ZIP-like behavior
+        cls.sub("ShellEx")?
+            .sub(storage_handler_guid)?
+            .set_default(handler_clsid.as_str())?;
         let _ = cls.sub(&format!(r"Implemented Categories\{{00021493-0000-0000-C000-000000000046}}"))?; // CATID_ShellFolder
     }
 
@@ -104,7 +111,13 @@ fn install_inner() -> io::Result<()> {
         }
         pid.set("CLSID", handler_clsid.as_str())?;
         pid.set("FriendlyTypeName", FRIENDLY_NAME)?;
+        // Mark as shortcut/folder (like ZIP files)
+        pid.set("IsShortcut", "")?;
         let shellex = pid.sub("ShellEx")?;
+        // StorageHandler GUID for ZIP-like behavior
+        shellex
+            .sub(storage_handler_guid)?
+            .set_default(handler_clsid.as_str())?;
         shellex
             .sub(&thumb_catid)?
             .set_default(handler_clsid.as_str())?;
@@ -114,7 +127,15 @@ fn install_inner() -> io::Result<()> {
         shellex
             .sub("StorageHandler")?
             .set_default(handler_clsid.as_str())?;
-        // Namespace Extension for IShellFolder (critical for folder behavior)
+        // FolderShortcut: critical for folder behavior (like ZIP)
+        shellex
+            .sub("FolderShortcut")?
+            .set_default(handler_clsid.as_str())?;
+        // Junction Point Handler (Folder Shortcut GUID)
+        shellex
+            .sub("{0AFACED1-E828-11D1-9187-B532F1E9575D}")?
+            .set_default(handler_clsid.as_str())?;
+        // Namespace Extension for IShellFolder
         shellex
             .sub("{00021500-0000-0000-C000-000000000046}")?
             .set_default(handler_clsid.as_str())?;
@@ -126,13 +147,14 @@ fn install_inner() -> io::Result<()> {
         let shell = pid.sub("shell")?;
         let open = shell.sub("open")?;
         open.set_default("Open")?;
+        // Use /idlist for ZIP-like folder behavior
         open.sub("command")?
-            .set_default(r#""%SystemRoot%\Explorer.exe" "%1""#)?;
+            .set_default(format!("explorer.exe ::{}%1", handler_clsid))?;
         let explore = shell.sub("explore")?;
         explore.set_default("Explore")?;
         explore
             .sub("command")?
-            .set_default(r#""%SystemRoot%\Explorer.exe" /e,"%1""#)?;
+            .set_default(format!("explorer.exe ::{}%1", handler_clsid))?;
     }
 
     for ext in SUPPORTED_EXTENSIONS {
@@ -141,6 +163,12 @@ fn install_inner() -> io::Result<()> {
         ext_key.set_default(progid)?;
         ext_key.set("PerceivedType", "compressed")?;
         ext_key.set("Content Type", "application/x-mpq")?;
+        // Mark as shortcut/folder at extension level
+        ext_key.set("IsShortcut", "")?;
+        // StorageHandler GUID for ZIP-like behavior
+        Rk::open(&root, format!(r"Software\Classes\{}\ShellEx", ext))?
+            .sub(storage_handler_guid)?
+            .set_default(handler_clsid.as_str())?;
         ext_key
             .sub("PersistentHandler")?
             .set_default(handler_clsid.as_str())?;
@@ -155,7 +183,15 @@ fn install_inner() -> io::Result<()> {
         ext_sx
             .sub("StorageHandler")?
             .set_default(handler_clsid.as_str())?;
-        // Namespace Extension for IShellFolder (critical for folder behavior)
+        // FolderShortcut: critical for folder behavior (like ZIP)
+        ext_sx
+            .sub("FolderShortcut")?
+            .set_default(handler_clsid.as_str())?;
+        // Junction Point Handler (Folder Shortcut GUID)
+        ext_sx
+            .sub("{0AFACED1-E828-11D1-9187-B532F1E9575D}")?
+            .set_default(handler_clsid.as_str())?;
+        // Namespace Extension for IShellFolder
         ext_sx
             .sub("{00021500-0000-0000-C000-000000000046}")?
             .set_default(handler_clsid.as_str())?;
@@ -163,9 +199,10 @@ fn install_inner() -> io::Result<()> {
         let ext_shell = ext_key.sub("shell")?;
         let ext_open = ext_shell.sub("open")?;
         ext_open.set_default("Open")?;
+        // Use /idlist for ZIP-like folder behavior
         ext_open
             .sub("command")?
-            .set_default(r#""%SystemRoot%\Explorer.exe" "%1""#)?;
+            .set_default(format!("explorer.exe ::{}%1", handler_clsid))?;
 
         let sfa_sx = Rk::open(&root, format!(r"Software\Classes\SystemFileAssociations\{}\ShellEx", ext))?;
         sfa_sx

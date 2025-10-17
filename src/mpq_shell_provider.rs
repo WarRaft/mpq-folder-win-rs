@@ -9,7 +9,9 @@ use windows_implement::implement;
 use crate::archive::MpqArchiveError;
 use crate::log::log;
 use crate::utils::guid::GuidExt;
+use windows::Win32::UI::Shell::IEnumExtraSearch;
 use windows::{
+    Win32::UI::Shell::IThumbnailProvider,
     Win32::{
         Foundation::{E_FAIL, E_NOTIMPL, E_OUTOFMEMORY, E_POINTER, HWND, S_FALSE, STG_E_ACCESSDENIED, STG_E_FILENOTFOUND},
         Graphics::Gdi::HBITMAP,
@@ -30,17 +32,19 @@ use windows::{
             StructuredStorage::IStorage,
             StructuredStorage::{IEnumSTATSTG, IEnumSTATSTG_Impl, IStorage_Impl, STGMOVE},
         },
-        UI::Shell::PropertiesSystem::IInitializeWithFile,
         UI::Shell::{
             Common::{ITEMIDLIST, STRRET},
             IInitializeWithItem, //
             IInitializeWithItem_Impl,
             ILGetSize,
+            IPersistFolder,
             IPersistFolder_Impl,
+            IShellFolder,
             IShellFolder_Impl,
             IShellFolder2,
             IShellItem,
             IThumbnailProvider_Impl,
+            PropertiesSystem::IInitializeWithFile,
             PropertiesSystem::{
                 IInitializeWithFile_Impl, //
                 IInitializeWithStream,
@@ -51,7 +55,6 @@ use windows::{
             SIGDN_FILESYSPATH,
             WTS_ALPHATYPE,
         },
-        UI::Shell::{IPersistFolder, IShellFolder},
     },
     core::{self as wcore, Error, Interface, PCWSTR, PWSTR, Result as WinResult},
 };
@@ -84,6 +87,39 @@ impl MpqShellProvider {
     fn archive_err_to_hresult(stage: &str, err: MpqArchiveError) -> Error {
         log(format!("MPQ archive load failed at {}: {}", stage, err));
         Error::from(E_FAIL)
+    }
+}
+
+
+#[allow(non_snake_case)]
+impl windows::Win32::UI::Shell::IShellFolder2_Impl for MpqShellProvider_Impl {
+    fn GetDefaultSearchGUID(&self) -> wcore::Result<windows_core::GUID> {
+        log("IShellFolder2::GetDefaultSearchGUID");
+        Err(Error::from(E_NOTIMPL))
+    }
+    fn EnumSearches(&self) -> wcore::Result<IEnumExtraSearch> {
+        log("IShellFolder2::EnumSearches");
+        Err(Error::from(E_NOTIMPL))
+    }
+    fn GetDefaultColumn(&self, _dwres: u32, _psort: *mut u32, _pdisplay: *mut u32) -> wcore::Result<()> {
+        log("IShellFolder2::GetDefaultColumn");
+        Err(Error::from(E_NOTIMPL))
+    }
+    fn GetDefaultColumnState(&self, _icolumn: u32) -> wcore::Result<windows::Win32::UI::Shell::Common::SHCOLSTATE> {
+        log("IShellFolder2::GetDefaultColumnState");
+        Err(Error::from(E_NOTIMPL))
+    }
+    fn GetDetailsEx(&self, _pidl: *const ITEMIDLIST, _pscid: *const windows::Win32::Foundation::PROPERTYKEY) -> wcore::Result<windows::Win32::System::Variant::VARIANT> {
+        log("IShellFolder2::GetDetailsEx");
+        Err(Error::from(E_NOTIMPL))
+    }
+    fn GetDetailsOf(&self, _pidl: *const ITEMIDLIST, _icolumn: u32, _psd: *mut windows::Win32::UI::Shell::Common::SHELLDETAILS) -> wcore::Result<()> {
+        log("IShellFolder2::GetDetailsOf");
+        Err(Error::from(E_NOTIMPL))
+    }
+    fn MapColumnToSCID(&self, _icolumn: u32, _pscid: *mut windows::Win32::Foundation::PROPERTYKEY) -> wcore::Result<()> {
+        log("IShellFolder2::MapColumnToSCID");
+        Err(Error::from(E_NOTIMPL))
     }
 }
 
@@ -393,11 +429,17 @@ impl IShellFolder_Impl for MpqShellProvider_Impl {
         Err(Error::from(E_NOTIMPL))
     }
 
-    fn GetAttributesOf(&self, _cidl: u32, _apidl: *const *const ITEMIDLIST, rgfinout: *mut u32) -> wcore::Result<()> {
-        log("IShellFolder::GetAttributesOf: returning SFGAO_STREAM");
+    fn GetAttributesOf(&self, cidl: u32, apidl: *const *const ITEMIDLIST, rgfinout: *mut u32) -> wcore::Result<()> {
         unsafe {
-            if !rgfinout.is_null() {
-                *rgfinout = 0x00000080; // SFGAO_STREAM
+            if rgfinout.is_null() { return Err(Error::from(E_POINTER)); }
+            // If querying the folder itself
+            if cidl == 0 || apidl.is_null() {
+                // SFGAO_FOLDER | SFGAO_HASSUBFOLDER | SFGAO_BROWSABLE | SFGAO_FILESYSANCESTOR
+                *rgfinout = 0x20000000 | 0x80000000 | 0x08000000 | 0x10000000;
+                log("IShellFolder::GetAttributesOf: folder attrs (FOLDER|HASSUBFOLDER|BROWSABLE|FILESYSANCESTOR)");
+            } else {
+                *rgfinout = 0x00000080; // SFGAO_STREAM for items
+                log("IShellFolder::GetAttributesOf: item attr SFGAO_STREAM");
             }
         }
         Ok(())
@@ -470,29 +512,29 @@ impl IStorage_Impl for MpqShellProvider_Impl {
         }
     }
 
-    fn CreateStorage(&self, pwcsname: &PCWSTR, grfmode: STGM, _reserved1: u32, _reserved2: u32) -> wcore::Result<windows::Win32::System::Com::StructuredStorage::IStorage> {
+    fn CreateStorage(&self, pwcsname: &PCWSTR, grfmode: STGM, _reserved1: u32, _reserved2: u32) -> wcore::Result<IStorage> {
         let name = Self::name_from_pwcs(pwcsname);
         log(format!("IStorage::CreateStorage stub name={} mode=0x{:X}", name, grfmode.0));
         Err(Error::from(STG_E_ACCESSDENIED))
     }
 
-    fn OpenStorage(&self, pwcsname: &PCWSTR, _pstgpriority: windows::core::Ref<'_, windows::Win32::System::Com::StructuredStorage::IStorage>, grfmode: STGM, _snbexclude: *const *const u16, _reserved: u32) -> wcore::Result<windows::Win32::System::Com::StructuredStorage::IStorage> {
+    fn OpenStorage(&self, pwcsname: &PCWSTR, _pstgpriority: windows::core::Ref<'_, IStorage>, grfmode: STGM, _snbexclude: *const *const u16, _reserved: u32) -> wcore::Result<IStorage> {
         let name = Self::name_from_pwcs(pwcsname);
         log(format!("IStorage::OpenStorage name='{}' mode=0x{:X}", name, grfmode.0));
         let descriptor = self.descriptor();
         if name.is_empty() {
             return Err(Error::from(E_FAIL));
         }
-        let storage: windows::Win32::System::Com::StructuredStorage::IStorage = MpqStorage::new(descriptor, name).into();
+        let storage: IStorage = MpqStorage::new(descriptor, name).into();
         Ok(storage)
     }
 
-    fn CopyTo(&self, _ciidexclude: u32, _rgiidexclude: *const windows_core::GUID, _snbexclude: *const *const u16, _pstgdest: windows::core::Ref<'_, windows::Win32::System::Com::StructuredStorage::IStorage>) -> wcore::Result<()> {
+    fn CopyTo(&self, _ciidexclude: u32, _rgiidexclude: *const windows_core::GUID, _snbexclude: *const *const u16, _pstgdest: windows::core::Ref<'_, IStorage>) -> wcore::Result<()> {
         log("IStorage::CopyTo: read-only placeholder");
         Err(Error::from(STG_E_ACCESSDENIED))
     }
 
-    fn MoveElementTo(&self, pwcsname: &PCWSTR, _pstgdest: windows::core::Ref<'_, windows::Win32::System::Com::StructuredStorage::IStorage>, pwcsnewname: &PCWSTR, _grfflags: &STGMOVE) -> wcore::Result<()> {
+    fn MoveElementTo(&self, pwcsname: &PCWSTR, _pstgdest: windows::core::Ref<'_, IStorage>, pwcsnewname: &PCWSTR, _grfflags: &STGMOVE) -> wcore::Result<()> {
         let old_name = Self::name_from_pwcs(pwcsname);
         let new_name = Self::name_from_pwcs(pwcsnewname);
         log(format!("IStorage::MoveElementTo stub name={} new_name={}", old_name, new_name));
@@ -652,11 +694,11 @@ impl IStorage_Impl for MpqStorage_Impl {
         self.open_stream_inner(&name)
     }
 
-    fn CreateStorage(&self, _pwcsname: &PCWSTR, _grfmode: STGM, _reserved1: u32, _reserved2: u32) -> wcore::Result<windows::Win32::System::Com::StructuredStorage::IStorage> {
+    fn CreateStorage(&self, _pwcsname: &PCWSTR, _grfmode: STGM, _reserved1: u32, _reserved2: u32) -> wcore::Result<IStorage> {
         Err(Error::from(STG_E_ACCESSDENIED))
     }
 
-    fn OpenStorage(&self, pwcsname: &PCWSTR, _pstgpriority: windows::core::Ref<'_, windows::Win32::System::Com::StructuredStorage::IStorage>, _grfmode: STGM, _snbexclude: *const *const u16, _reserved: u32) -> wcore::Result<windows::Win32::System::Com::StructuredStorage::IStorage> {
+    fn OpenStorage(&self, pwcsname: &PCWSTR, _pstgpriority: windows::core::Ref<'_, IStorage>, _grfmode: STGM, _snbexclude: *const *const u16, _reserved: u32) -> wcore::Result<IStorage> {
         let name = MpqShellProvider_Impl::name_from_pwcs(pwcsname);
         let (dirs, _files) = list_children(&self.descriptor, &self.prefix);
         if !dirs.iter().any(|d| d.eq_ignore_ascii_case(&name)) {
@@ -666,11 +708,11 @@ impl IStorage_Impl for MpqStorage_Impl {
         Ok(MpqStorage::new(self.descriptor.clone(), new_prefix).into())
     }
 
-    fn CopyTo(&self, _ciidexclude: u32, _rgiidexclude: *const windows_core::GUID, _snbexclude: *const *const u16, _pstgdest: windows::core::Ref<'_, windows::Win32::System::Com::StructuredStorage::IStorage>) -> wcore::Result<()> {
+    fn CopyTo(&self, _ciidexclude: u32, _rgiidexclude: *const windows_core::GUID, _snbexclude: *const *const u16, _pstgdest: windows::core::Ref<'_, IStorage>) -> wcore::Result<()> {
         Err(Error::from(STG_E_ACCESSDENIED))
     }
 
-    fn MoveElementTo(&self, _pwcsname: &PCWSTR, _pstgdest: windows::core::Ref<'_, windows::Win32::System::Com::StructuredStorage::IStorage>, _pwcsnewname: &PCWSTR, _grfflags: &STGMOVE) -> wcore::Result<()> {
+    fn MoveElementTo(&self, _pwcsname: &PCWSTR, _pstgdest: windows::core::Ref<'_, IStorage>, _pwcsnewname: &PCWSTR, _grfflags: &STGMOVE) -> wcore::Result<()> {
         Err(Error::from(STG_E_ACCESSDENIED))
     }
 

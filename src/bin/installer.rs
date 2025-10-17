@@ -29,12 +29,15 @@ fn main() -> io::Result<()> {
 
         match action_execute(action) {
             Ok(()) => {
-                log(format!("Action '{}' completed successfully", label));
-                println!("\n✓ Action '{}' completed successfully", label);
+                // Only print success message for non-install/uninstall actions
+                if action != crate::actiions::dialog::Action::Install && action != crate::actiions::dialog::Action::Uninstall {
+                    log(format!("Action '{}' completed successfully", label));
+                    println!("\nAction '{}' completed successfully", label);
+                }
             }
             Err(err) => {
                 log(format!("Action '{}' failed: {}", label, err));
-                eprintln!("\n✗ Action '{}' failed: {}", label, err);
+                eprintln!("\nError: Action '{}' failed: {}", label, err);
                 // Don't exit, just show error and return to menu
             }
         }
