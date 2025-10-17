@@ -28,10 +28,14 @@ fn main() -> io::Result<()> {
         }
 
         match action_execute(action) {
-            Ok(()) => log(format!("Action '{}' completed successfully", label)),
+            Ok(()) => {
+                log(format!("Action '{}' completed successfully", label));
+                println!("\n✓ Action '{}' completed successfully", label);
+            }
             Err(err) => {
                 log(format!("Action '{}' failed: {}", label, err));
-                return Err(err);
+                eprintln!("\n✗ Action '{}' failed: {}", label, err);
+                // Don't exit, just show error and return to menu
             }
         }
 

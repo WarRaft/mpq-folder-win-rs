@@ -48,12 +48,12 @@ impl MpqArchiveDescriptor {
     }
 
     pub fn load_from_path(path: &str) -> Result<Self, MpqArchiveError> {
-        log(format!("MpqArchiveDescriptor::load_from_path stub path={}", path));
+        log(format!("MpqArchiveDescriptor::load_from_path (placeholder) path={}", path));
         Ok(Self::placeholder_from_path(path))
     }
 
     pub fn load_from_bytes(bytes: Arc<[u8]>) -> Result<Self, MpqArchiveError> {
-        log(format!("MpqArchiveDescriptor::load_from_bytes stub size={}", bytes.len()));
+        log(format!("MpqArchiveDescriptor::load_from_bytes (placeholder) size={}", bytes.len()));
         Ok(Self::placeholder_from_stream(bytes.len()))
     }
 
@@ -97,3 +97,5 @@ impl From<std::io::Error> for MpqArchiveError {
         MpqArchiveError::Io(err)
     }
 }
+// No external MPQ backend is used at this stage.
+

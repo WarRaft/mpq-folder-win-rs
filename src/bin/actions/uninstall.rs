@@ -5,19 +5,38 @@ use mpq_folder_win::utils::guid::GuidExt;
 use mpq_folder_win::{CLSID_MPQ_FOLDER, DEFAULT_PROGID, SHELL_PREVIEW_HANDLER_CATID, SHELL_THUMB_HANDLER_CATID, SUPPORTED_EXTENSIONS};
 use std::io;
 use winreg::RegKey;
-use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_SET_VALUE};
+use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_READ, KEY_SET_VALUE};
 
 pub fn uninstall() -> io::Result<()> {
+    if !crate::utils::admin_check::is_running_as_admin() {
+        eprintln!("\n╔══════════════════════════════════════════════════════════════╗");
+        eprintln!("║  ERROR: Administrator rights required                       ║");
+        eprintln!("╚══════════════════════════════════════════════════════════════╝");
+        eprintln!("\nUninstallation requires administrator privileges because:");
+        eprintln!("  • Registry keys must be removed from HKLM (system-wide)");
+        eprintln!("  • DLL must be deleted from C:\\Program Files\\mpq-folder-win\\");
+        eprintln!("\nPlease close this installer and:");
+        eprintln!("  → Right-click mpq-folder-win-installer.exe");
+        eprintln!("  → Select 'Run as administrator'\n");
+        log("Uninstall: Not running as administrator. Aborting.");
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "Administrator rights required for uninstallation"));
+    }
     if let Err(err) = uninstall_inner() {
         log(format!("Uninstall failed: {}", err));
+        return Err(err);
     }
+    println!("\n✓ Uninstallation completed successfully!");
+    println!("  → Registry keys removed from HKLM");
+    println!("  → DLL removed from C:\\Program Files\\mpq-folder-win\\");
+    println!("\nRecommended next step:");
+    println!("  • Restart Explorer (use menu option) to complete cleanup\n");
     Ok(())
 }
 
 fn uninstall_inner() -> io::Result<()> {
-    log("Uninstall (current user): start — removing shell bindings.");
+    log("Uninstall (admin, HKLM): start — removing shell bindings.");
 
-    let root = RegKey::predef(HKEY_CURRENT_USER);
+    let root = RegKey::predef(HKEY_LOCAL_MACHINE);
     let progid = DEFAULT_PROGID;
 
     let handler_clsid = CLSID_MPQ_FOLDER.to_braced_upper();
@@ -85,6 +104,6 @@ fn uninstall_inner() -> io::Result<()> {
     del_tree(&format!(r"Software\Classes\CLSID\{}", handler_clsid))?;
 
     notify_shell_assoc("uninstall");
-    log("Uninstall completed (HKCU). Thumbnail preview bindings removed.");
+    log("Uninstall completed (HKLM). Thumbnail preview bindings removed.");
     Ok(())
 }

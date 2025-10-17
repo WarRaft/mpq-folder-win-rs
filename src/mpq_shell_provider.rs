@@ -1,5 +1,6 @@
 use crate::{CLSID_MPQ_FOLDER, DLL_LOCK_COUNT, ProviderState, archive::MpqArchiveDescriptor, archive::MpqEntry};
 use std::ffi::c_void;
+use std::mem::size_of;
 use std::ptr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -8,17 +9,54 @@ use windows_implement::implement;
 use crate::archive::MpqArchiveError;
 use crate::log::log;
 use crate::utils::guid::GuidExt;
-use windows::Win32::Foundation::{E_FAIL, E_NOTIMPL, E_OUTOFMEMORY, E_POINTER, S_FALSE, STG_E_ACCESSDENIED, STG_E_FILENOTFOUND};
-use windows::Win32::Graphics::Gdi::HBITMAP;
-use windows::Win32::System::Com::StructuredStorage::{IEnumSTATSTG, IEnumSTATSTG_Impl, IStorage_Impl, STGMOVE};
-use windows::Win32::System::Com::{CoTaskMemAlloc, IPersistFile_Impl, ISequentialStream, IStream, STATFLAG_NONAME, STATSTG, STGM, STGM_READ, STGTY_STORAGE, STGTY_STREAM, STREAM_SEEK_SET};
-use windows::Win32::UI::Shell::PropertiesSystem::{IInitializeWithFile_Impl, IInitializeWithStream_Impl};
-use windows::Win32::UI::Shell::SHCreateMemStream;
-use windows::Win32::UI::Shell::{IInitializeWithItem_Impl, IShellItem, IThumbnailProvider_Impl, SIGDN_FILESYSPATH, WTS_ALPHATYPE};
-use windows::core::{self as wcore, Error, Result as WinResult};
-use windows_core::{Interface, PCWSTR, PWSTR};
+use windows::{
+    Win32::{
+        Foundation::{E_FAIL, E_NOTIMPL, E_OUTOFMEMORY, E_POINTER, HWND, S_FALSE, STG_E_ACCESSDENIED, STG_E_FILENOTFOUND},
+        Graphics::Gdi::HBITMAP,
+        System::Com::{
+            CoTaskMemAlloc,
+            IBindCtx, //
+            IPersistFile,
+            IPersistFile_Impl,
+            ISequentialStream,
+            IStream,
+            STATFLAG_NONAME,
+            STATSTG,
+            STGM,
+            STGM_READ,
+            STGTY_STORAGE,
+            STGTY_STREAM,
+            STREAM_SEEK_SET,
+            StructuredStorage::IStorage,
+            StructuredStorage::{IEnumSTATSTG, IEnumSTATSTG_Impl, IStorage_Impl, STGMOVE},
+        },
+        UI::Shell::PropertiesSystem::IInitializeWithFile,
+        UI::Shell::{
+            Common::{ITEMIDLIST, STRRET},
+            IInitializeWithItem, //
+            IInitializeWithItem_Impl,
+            ILGetSize,
+            IPersistFolder_Impl,
+            IShellFolder_Impl,
+            IShellFolder2,
+            IShellItem,
+            IThumbnailProvider_Impl,
+            PropertiesSystem::{
+                IInitializeWithFile_Impl, //
+                IInitializeWithStream,
+                IInitializeWithStream_Impl,
+            },
+            SHCreateMemStream,
+            SHGDNF,
+            SIGDN_FILESYSPATH,
+            WTS_ALPHATYPE,
+        },
+        UI::Shell::{IPersistFolder, IShellFolder},
+    },
+    core::{self as wcore, Error, Interface, PCWSTR, PWSTR, Result as WinResult},
+};
 
-#[implement(windows::Win32::UI::Shell::IThumbnailProvider, windows::Win32::UI::Shell::IInitializeWithItem, windows::Win32::UI::Shell::PropertiesSystem::IInitializeWithStream, windows::Win32::UI::Shell::PropertiesSystem::IInitializeWithFile, windows::Win32::System::Com::StructuredStorage::IStorage, windows::Win32::System::Com::IPersistFile)]
+#[implement(IThumbnailProvider, IInitializeWithItem, IInitializeWithStream, IInitializeWithFile, IStorage, IPersistFile, IPersistFolder, IShellFolder, IShellFolder2)]
 pub struct MpqShellProvider {
     state: Mutex<ProviderState>,
 }
@@ -85,6 +123,11 @@ impl MpqShellProvider_Impl {
         st.path_utf8
             .clone()
             .unwrap_or_else(|| "MPQ archive (stream source)".to_string())
+    }
+
+    fn set_root_pidl_bytes(&self, data: Option<Vec<u8>>) {
+        let mut st = self.state.lock().unwrap();
+        st.root_pidl = data;
     }
 }
 
@@ -244,6 +287,145 @@ impl IPersistFile_Impl for MpqShellProvider_Impl {
     }
 }
 
+#[allow(non_snake_case)]
+impl IPersistFolder_Impl for MpqShellProvider_Impl {
+    fn Initialize(&self, pidl: *const ITEMIDLIST) -> wcore::Result<()> {
+        log(format!("IPersistFolder::Initialize pidl={:p}", pidl));
+        let clone = clone_pidl(pidl);
+        self.set_root_pidl_bytes(clone);
+        Ok(())
+    }
+}
+
+#[allow(non_snake_case)]
+impl IShellFolder_Impl for MpqShellProvider_Impl {
+    fn ParseDisplayName(&self, _hwnd: HWND, _pbc: windows_core::Ref<IBindCtx>, pszdisplayname: &PCWSTR, pcheaten: *const u32, ppidl: *mut *mut ITEMIDLIST, pdwattributes: *mut u32) -> wcore::Result<()> {
+        let name = Self::name_from_pwcs(pszdisplayname);
+        log(format!("IShellFolder::ParseDisplayName called for '{}'", name));
+        if name.eq_ignore_ascii_case("TEST.txt") {
+            unsafe {
+                // Allocate a dummy PIDL (one byte)
+                let pidl = CoTaskMemAlloc(2) as *mut u8;
+                if !pidl.is_null() {
+                    *pidl = 1; // simple marker
+                    *pidl.add(1) = 0; // null terminator
+                    if !ppidl.is_null() {
+                        *ppidl = pidl as *mut ITEMIDLIST;
+                    }
+                    if !pcheaten.is_null() {
+                        *(pcheaten as *mut u32) = name.len() as u32;
+                    }
+                    if !pdwattributes.is_null() {
+                        *pdwattributes = 0x00000080; // SFGAO_STREAM
+                    }
+                    log("IShellFolder::ParseDisplayName: returned dummy PIDL for TEST.txt");
+                    return Ok(());
+                }
+            }
+        }
+        Err(Error::from(E_FAIL))
+    }
+
+    fn EnumObjects(&self, _hwnd: HWND, _grfflags: u32, ppenumidlist: windows_core::OutRef<windows::Win32::UI::Shell::IEnumIDList>) -> windows_core::HRESULT {
+        log("IShellFolder::EnumObjects: returning one TEST.txt item");
+        #[implement(windows::Win32::UI::Shell::IEnumIDList)]
+        pub struct EnumOneItemImpl {
+            pub fetched: std::cell::Cell<bool>,
+        }
+        impl windows::Win32::UI::Shell::IEnumIDList_Impl for EnumOneItemImpl_Impl {
+            fn Next(&self, celt: u32, rgelt: *mut *mut ITEMIDLIST, pceltfetched: *mut u32) -> windows::core::HRESULT {
+                unsafe {
+                    if self.fetched.get() || celt == 0 || rgelt.is_null() {
+                        if !pceltfetched.is_null() {
+                            *pceltfetched = 0;
+                        }
+                        return S_FALSE;
+                    }
+                    let pidl = CoTaskMemAlloc(2) as *mut u8;
+                    if !pidl.is_null() {
+                        *pidl = 1;
+                        *pidl.add(1) = 0;
+                        *rgelt = pidl as *mut ITEMIDLIST;
+                        if !pceltfetched.is_null() {
+                            *pceltfetched = 1;
+                        }
+                        self.fetched.set(true);
+                        return windows::Win32::Foundation::S_OK;
+                    }
+                    E_FAIL
+                }
+            }
+            fn Skip(&self, _celt: u32) -> windows::core::HRESULT {
+                windows::Win32::Foundation::S_OK
+            }
+            fn Reset(&self) -> windows::core::HRESULT {
+                self.fetched.set(false);
+                windows::Win32::Foundation::S_OK
+            }
+            fn Clone(&self, ppenum: windows::core::OutRef<windows::Win32::UI::Shell::IEnumIDList>) -> windows::core::HRESULT {
+                let clone = windows::Win32::UI::Shell::IEnumIDList::from(EnumOneItemImpl { fetched: std::cell::Cell::new(false) });
+                let _ = ppenum.write(Some(clone));
+                windows::Win32::Foundation::S_OK
+            }
+        }
+        let enum_obj = windows::Win32::UI::Shell::IEnumIDList::from(EnumOneItemImpl { fetched: std::cell::Cell::new(false) });
+        let _ = ppenumidlist.write(Some(enum_obj));
+        windows::Win32::Foundation::S_OK.into()
+    }
+
+    fn BindToObject(&self, _pidl: *const ITEMIDLIST, _pbc: windows_core::Ref<IBindCtx>, _riid: *const windows_core::GUID, _ppv: *mut *mut c_void) -> wcore::Result<()> {
+        log("IShellFolder::BindToObject: stub (no subfolders)");
+        Err(Error::from(E_NOTIMPL))
+    }
+
+    fn BindToStorage(&self, _pidl: *const ITEMIDLIST, _pbc: windows_core::Ref<IBindCtx>, _riid: *const windows_core::GUID, _ppv: *mut *mut c_void) -> wcore::Result<()> {
+        log("IShellFolder::BindToStorage: stub");
+        Err(Error::from(E_NOTIMPL))
+    }
+
+    fn CompareIDs(&self, _lparam: windows::Win32::Foundation::LPARAM, _pidl1: *const ITEMIDLIST, _pidl2: *const ITEMIDLIST) -> windows_core::HRESULT {
+        log("IShellFolder::CompareIDs: stub");
+        S_FALSE.into()
+    }
+
+    fn CreateViewObject(&self, _hwndowner: HWND, _riid: *const windows_core::GUID, _ppv: *mut *mut c_void) -> wcore::Result<()> {
+        log("IShellFolder::CreateViewObject: stub");
+        Err(Error::from(E_NOTIMPL))
+    }
+
+    fn GetAttributesOf(&self, _cidl: u32, _apidl: *const *const ITEMIDLIST, rgfinout: *mut u32) -> wcore::Result<()> {
+        log("IShellFolder::GetAttributesOf: returning SFGAO_STREAM");
+        unsafe {
+            if !rgfinout.is_null() {
+                *rgfinout = 0x00000080; // SFGAO_STREAM
+            }
+        }
+        Ok(())
+    }
+
+    fn GetUIObjectOf(&self, _hwndowner: HWND, _cidl: u32, _apidl: *const *const ITEMIDLIST, _riid: *const windows_core::GUID, _rgfreserved: *const u32, _ppv: *mut *mut c_void) -> wcore::Result<()> {
+        log("IShellFolder::GetUIObjectOf: stub");
+        Err(Error::from(E_NOTIMPL))
+    }
+
+    fn GetDisplayNameOf(&self, _pidl: *const ITEMIDLIST, _uflags: SHGDNF, pname: *mut STRRET) -> wcore::Result<()> {
+        log("IShellFolder::GetDisplayNameOf: returning TEST.txt");
+        unsafe {
+            if !pname.is_null() {
+                (*pname).uType = 1; // STRRET_CSTR
+                let s = b"TEST.txt\0";
+                ptr::copy_nonoverlapping(s.as_ptr(), (*pname).Anonymous.cStr.as_mut_ptr(), s.len());
+            }
+        }
+        Ok(())
+    }
+
+    fn SetNameOf(&self, _hwnd: HWND, _pidl: *const ITEMIDLIST, _pszname: &PCWSTR, _uflags: SHGDNF, _ppidlout: *mut *mut ITEMIDLIST) -> wcore::Result<()> {
+        log("IShellFolder::SetNameOf: stub");
+        Err(Error::from(E_NOTIMPL))
+    }
+}
+
 // ============================
 // IStorage skeleton
 // ============================
@@ -296,8 +478,13 @@ impl IStorage_Impl for MpqShellProvider_Impl {
 
     fn OpenStorage(&self, pwcsname: &PCWSTR, _pstgpriority: windows::core::Ref<'_, windows::Win32::System::Com::StructuredStorage::IStorage>, grfmode: STGM, _snbexclude: *const *const u16, _reserved: u32) -> wcore::Result<windows::Win32::System::Com::StructuredStorage::IStorage> {
         let name = Self::name_from_pwcs(pwcsname);
-        log(format!("IStorage::OpenStorage stub name={} mode=0x{:X}", name, grfmode.0));
-        Err(Error::from(STG_E_ACCESSDENIED))
+        log(format!("IStorage::OpenStorage name='{}' mode=0x{:X}", name, grfmode.0));
+        let descriptor = self.descriptor();
+        if name.is_empty() {
+            return Err(Error::from(E_FAIL));
+        }
+        let storage: windows::Win32::System::Com::StructuredStorage::IStorage = MpqStorage::new(descriptor, name).into();
+        Ok(storage)
     }
 
     fn CopyTo(&self, _ciidexclude: u32, _rgiidexclude: *const windows_core::GUID, _snbexclude: *const *const u16, _pstgdest: windows::core::Ref<'_, windows::Win32::System::Com::StructuredStorage::IStorage>) -> wcore::Result<()> {
@@ -324,9 +511,7 @@ impl IStorage_Impl for MpqShellProvider_Impl {
 
     fn EnumElements(&self, _reserved1: u32, _reserved2: *const c_void, _reserved3: u32) -> wcore::Result<IEnumSTATSTG> {
         let descriptor = self.descriptor();
-        let count = descriptor.entries().len();
-        log(format!("IStorage::EnumElements: enumerating {} entries", count));
-        let enumerator: IEnumSTATSTG = MpqEnumStatStg::new(descriptor, 0).into();
+        let enumerator: IEnumSTATSTG = MpqEnumElements::new(descriptor, String::new()).into();
         Ok(enumerator)
     }
 
@@ -384,20 +569,213 @@ impl IStorage_Impl for MpqShellProvider_Impl {
     }
 }
 
-#[implement(windows::Win32::System::Com::StructuredStorage::IEnumSTATSTG)]
-struct MpqEnumStatStg {
+// ============
+// Sub-storage
+// ============
+
+fn normalize_join(prefix: &str, name: &str) -> String {
+    if prefix.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}/{}", prefix.trim_end_matches('/'), name.trim_start_matches('/'))
+    }
+}
+
+fn list_children(descriptor: &MpqArchiveDescriptor, prefix: &str) -> (Vec<String>, Vec<usize>) {
+    use std::collections::HashSet;
+    let mut dirs: HashSet<String> = HashSet::new();
+    let mut files: Vec<usize> = Vec::new();
+    let pre = if prefix.is_empty() { String::new() } else { format!("{}/", prefix.trim_end_matches('/')) };
+    for (idx, e) in descriptor.entries().iter().enumerate() {
+        let p = &e.path;
+        if !pre.is_empty() {
+            if !p.starts_with(&pre) {
+                continue;
+            }
+        }
+        let rel = if pre.is_empty() { p.as_str() } else { &p[pre.len()..] };
+        let rel = rel.trim_matches(['/', '\\']);
+        if rel.is_empty() {
+            continue;
+        }
+        if let Some(pos) = rel.find(['/', '\\']) {
+            let d = &rel[..pos];
+            if !d.is_empty() {
+                dirs.insert(d.to_string());
+            }
+        } else {
+            files.push(idx);
+        }
+    }
+    let mut dlist: Vec<String> = dirs.into_iter().collect();
+    dlist.sort_unstable();
+    files.sort_unstable();
+    (dlist, files)
+}
+
+#[implement(windows::Win32::System::Com::StructuredStorage::IStorage)]
+struct MpqStorage {
     descriptor: Arc<MpqArchiveDescriptor>,
+    prefix: String,
+}
+
+impl MpqStorage {
+    fn new(descriptor: Arc<MpqArchiveDescriptor>, prefix: String) -> Self {
+        Self { descriptor, prefix }
+    }
+
+    fn open_stream_inner(&self, name: &str) -> wcore::Result<IStream> {
+        let full1 = normalize_join(&self.prefix, name);
+        let full2 = full1.replace('/', "\\");
+        let entry = self
+            .descriptor
+            .find_entry(&full1)
+            .or_else(|| self.descriptor.find_entry(&full2))
+            .ok_or_else(|| Error::from(STG_E_FILENOTFOUND))?;
+        unsafe {
+            match SHCreateMemStream(Some(entry.data.as_ref())) {
+                Some(s) => Ok(s),
+                None => Err(Error::from(E_FAIL)),
+            }
+        }
+    }
+}
+
+#[allow(non_snake_case)]
+impl IStorage_Impl for MpqStorage_Impl {
+    fn CreateStream(&self, _pwcsname: &PCWSTR, _grfmode: STGM, _reserved1: u32, _reserved2: u32) -> wcore::Result<IStream> {
+        Err(Error::from(STG_E_ACCESSDENIED))
+    }
+
+    fn OpenStream(&self, pwcsname: &PCWSTR, _reserved1: *const c_void, _grfmode: STGM, _reserved2: u32) -> wcore::Result<IStream> {
+        let name = MpqShellProvider_Impl::name_from_pwcs(pwcsname);
+        self.open_stream_inner(&name)
+    }
+
+    fn CreateStorage(&self, _pwcsname: &PCWSTR, _grfmode: STGM, _reserved1: u32, _reserved2: u32) -> wcore::Result<windows::Win32::System::Com::StructuredStorage::IStorage> {
+        Err(Error::from(STG_E_ACCESSDENIED))
+    }
+
+    fn OpenStorage(&self, pwcsname: &PCWSTR, _pstgpriority: windows::core::Ref<'_, windows::Win32::System::Com::StructuredStorage::IStorage>, _grfmode: STGM, _snbexclude: *const *const u16, _reserved: u32) -> wcore::Result<windows::Win32::System::Com::StructuredStorage::IStorage> {
+        let name = MpqShellProvider_Impl::name_from_pwcs(pwcsname);
+        let (dirs, _files) = list_children(&self.descriptor, &self.prefix);
+        if !dirs.iter().any(|d| d.eq_ignore_ascii_case(&name)) {
+            return Err(Error::from(STG_E_FILENOTFOUND));
+        }
+        let new_prefix = normalize_join(&self.prefix, &name);
+        Ok(MpqStorage::new(self.descriptor.clone(), new_prefix).into())
+    }
+
+    fn CopyTo(&self, _ciidexclude: u32, _rgiidexclude: *const windows_core::GUID, _snbexclude: *const *const u16, _pstgdest: windows::core::Ref<'_, windows::Win32::System::Com::StructuredStorage::IStorage>) -> wcore::Result<()> {
+        Err(Error::from(STG_E_ACCESSDENIED))
+    }
+
+    fn MoveElementTo(&self, _pwcsname: &PCWSTR, _pstgdest: windows::core::Ref<'_, windows::Win32::System::Com::StructuredStorage::IStorage>, _pwcsnewname: &PCWSTR, _grfflags: &STGMOVE) -> wcore::Result<()> {
+        Err(Error::from(STG_E_ACCESSDENIED))
+    }
+
+    fn Commit(&self, _grfcommitflags: u32) -> wcore::Result<()> {
+        Ok(())
+    }
+    fn Revert(&self) -> wcore::Result<()> {
+        Ok(())
+    }
+
+    fn EnumElements(&self, _reserved1: u32, _reserved2: *const c_void, _reserved3: u32) -> wcore::Result<IEnumSTATSTG> {
+        Ok(MpqEnumElements::new(self.descriptor.clone(), self.prefix.clone()).into())
+    }
+
+    fn DestroyElement(&self, _pwcsname: &PCWSTR) -> wcore::Result<()> {
+        Err(Error::from(STG_E_ACCESSDENIED))
+    }
+    fn RenameElement(&self, _pwcsoldname: &PCWSTR, _pwcsnewname: &PCWSTR) -> wcore::Result<()> {
+        Err(Error::from(STG_E_ACCESSDENIED))
+    }
+    fn SetElementTimes(&self, _pwcsname: &PCWSTR, _pctime: *const windows::Win32::Foundation::FILETIME, _patime: *const windows::Win32::Foundation::FILETIME, _pmtime: *const windows::Win32::Foundation::FILETIME) -> wcore::Result<()> {
+        Err(Error::from(STG_E_ACCESSDENIED))
+    }
+    fn SetClass(&self, _clsid: *const windows_core::GUID) -> wcore::Result<()> {
+        Ok(())
+    }
+    fn SetStateBits(&self, _grfstatebits: u32, _grfmask: u32) -> wcore::Result<()> {
+        Ok(())
+    }
+
+    fn Stat(&self, pstatstg: *mut STATSTG, _grfstatflag: u32) -> wcore::Result<()> {
+        if pstatstg.is_null() {
+            return Err(Error::from(E_POINTER));
+        }
+        let mut stat = STATSTG::default();
+        let name_required = (_grfstatflag & STATFLAG_NONAME.0 as u32) == 0;
+        if name_required {
+            stat.pwcsName = allocate_com_string(&self.prefix)?;
+        }
+        let pre = if self.prefix.is_empty() {
+            String::new()
+        } else {
+            format!("{}/", self.prefix.trim_end_matches('/'))
+        };
+        let mut total: u64 = 0;
+        for e in self.descriptor.entries().iter() {
+            if pre.is_empty() || e.path.starts_with(&pre) {
+                total = total.saturating_add(e.uncompressed_size);
+            }
+        }
+        stat.r#type = STGTY_STORAGE.0 as u32;
+        stat.cbSize = total;
+        stat.grfMode = STGM_READ;
+        unsafe {
+            *pstatstg = stat;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+enum EnumItem {
+    Dir(String),
+    File(usize), // index into descriptor.entries()
+}
+
+#[implement(windows::Win32::System::Com::StructuredStorage::IEnumSTATSTG)]
+struct MpqEnumElements {
+    descriptor: Arc<MpqArchiveDescriptor>,
+    prefix: String,
+    items: Arc<[EnumItem]>,
     position: Mutex<usize>,
 }
 
-impl MpqEnumStatStg {
-    fn new(descriptor: Arc<MpqArchiveDescriptor>, position: usize) -> Self {
-        Self { descriptor, position: Mutex::new(position) }
+impl MpqEnumElements {
+    fn new(descriptor: Arc<MpqArchiveDescriptor>, prefix: String) -> Self {
+        let (dirs, files_idx) = list_children(&descriptor, &prefix);
+        let mut items: Vec<EnumItem> = Vec::with_capacity(dirs.len() + files_idx.len());
+        for d in dirs {
+            items.push(EnumItem::Dir(d));
+        }
+        for i in files_idx {
+            items.push(EnumItem::File(i));
+        }
+        Self { descriptor, prefix, items: Arc::from(items.into_boxed_slice()), position: Mutex::new(0) }
     }
 
-    fn stat_for_entry(entry: &MpqEntry) -> wcore::Result<STATSTG> {
+    fn stat_for_dir(name: &str) -> wcore::Result<STATSTG> {
         let mut stat = STATSTG::default();
-        stat.pwcsName = allocate_com_string(&entry.path)?;
+        stat.pwcsName = allocate_com_string(name)?;
+        stat.r#type = STGTY_STORAGE.0 as u32;
+        stat.cbSize = 0;
+        stat.grfMode = STGM_READ;
+        Ok(stat)
+    }
+
+    fn stat_for_file(entry: &MpqEntry) -> wcore::Result<STATSTG> {
+        let filename = entry
+            .path
+            .rsplit(['/', '\\'])
+            .next()
+            .unwrap_or(entry.path.as_str())
+            .to_string();
+        let mut stat = STATSTG::default();
+        stat.pwcsName = allocate_com_string(&filename)?;
         stat.r#type = STGTY_STREAM.0 as u32;
         stat.cbSize = entry.uncompressed_size;
         stat.grfMode = STGM_READ;
@@ -406,7 +784,7 @@ impl MpqEnumStatStg {
 }
 
 #[allow(non_snake_case)]
-impl IEnumSTATSTG_Impl for MpqEnumStatStg_Impl {
+impl IEnumSTATSTG_Impl for MpqEnumElements_Impl {
     fn Next(&self, celt: u32, rgelt: *mut STATSTG, pceltfetched: *mut u32) -> wcore::Result<()> {
         if rgelt.is_null() {
             return Err(Error::from(E_POINTER));
@@ -416,11 +794,12 @@ impl IEnumSTATSTG_Impl for MpqEnumStatStg_Impl {
         }
 
         let mut written = 0u32;
-        let entries = self.descriptor.entries();
         let mut pos = self.position.lock().unwrap();
-
-        while written < celt && *pos < entries.len() {
-            let stat = MpqEnumStatStg::stat_for_entry(&entries[*pos])?;
+        while written < celt && *pos < self.items.len() {
+            let stat = match &self.items[*pos] {
+                EnumItem::Dir(name) => MpqEnumElements::stat_for_dir(name)?,
+                EnumItem::File(idx) => MpqEnumElements::stat_for_file(&self.descriptor.entries()[*idx])?,
+            };
             unsafe {
                 *rgelt.add(written as usize) = stat;
             }
@@ -438,11 +817,10 @@ impl IEnumSTATSTG_Impl for MpqEnumStatStg_Impl {
     }
 
     fn Skip(&self, celt: u32) -> wcore::Result<()> {
-        let entries_len = self.descriptor.entries().len();
         let mut pos = self.position.lock().unwrap();
         let target = (*pos).saturating_add(celt as usize);
-        if target > entries_len {
-            *pos = entries_len;
+        if target > self.items.len() {
+            *pos = self.items.len();
             Err(Error::from(S_FALSE))
         } else {
             *pos = target;
@@ -451,14 +829,12 @@ impl IEnumSTATSTG_Impl for MpqEnumStatStg_Impl {
     }
 
     fn Reset(&self) -> wcore::Result<()> {
-        let mut pos = self.position.lock().unwrap();
-        *pos = 0;
+        *self.position.lock().unwrap() = 0;
         Ok(())
     }
 
     fn Clone(&self) -> wcore::Result<IEnumSTATSTG> {
-        let pos = *self.position.lock().unwrap();
-        Ok(MpqEnumStatStg::new(self.descriptor.clone(), pos).into())
+        Ok(MpqEnumElements { descriptor: self.descriptor.clone(), prefix: self.prefix.clone(), items: self.items.clone(), position: Mutex::new(*self.position.lock().unwrap()) }.into())
     }
 }
 
@@ -474,4 +850,19 @@ fn allocate_com_string(text: &str) -> wcore::Result<PWSTR> {
         ptr::copy_nonoverlapping(slice.as_ptr(), mem, slice.len());
         Ok(PWSTR(mem))
     }
+}
+
+fn clone_pidl(pidl: *const ITEMIDLIST) -> Option<Vec<u8>> {
+    if pidl.is_null() {
+        return None;
+    }
+    let size = unsafe { ILGetSize(Some(pidl)) } as usize;
+    if size == 0 {
+        return None;
+    }
+    let mut buffer = vec![0u8; size];
+    unsafe {
+        ptr::copy_nonoverlapping(pidl as *const u8, buffer.as_mut_ptr(), size);
+    }
+    Some(buffer)
 }

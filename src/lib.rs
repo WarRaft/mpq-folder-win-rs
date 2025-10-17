@@ -21,11 +21,17 @@ struct ProviderState {
     path_utf8: Option<String>,
     stream_data: Option<Arc<[u8]>>,
     archive: Arc<archive::MpqArchiveDescriptor>,
+    root_pidl: Option<Vec<u8>>,
 }
 
 impl Default for ProviderState {
     fn default() -> Self {
-        Self { path_utf8: None, stream_data: None, archive: Arc::new(archive::MpqArchiveDescriptor::placeholder("MPQ handler not initialized")) }
+        Self {
+            path_utf8: None,
+            stream_data: None,
+            archive: Arc::new(archive::MpqArchiveDescriptor::placeholder("MPQ handler not initialized")),
+            root_pidl: None,
+        }
     }
 }
 

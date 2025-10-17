@@ -13,7 +13,7 @@ use windows_implement::implement;
 fn iid_name(iid: &GUID) -> &'static str {
     use windows::Win32::System::Com::IPersistFile;
     use windows::Win32::System::Com::StructuredStorage::IStorage;
-    use windows::Win32::UI::Shell::{IInitializeWithItem, IThumbnailProvider, PropertiesSystem::IInitializeWithFile, PropertiesSystem::IInitializeWithStream};
+    use windows::Win32::UI::Shell::{IPersistFolder, IShellFolder, IInitializeWithItem, IThumbnailProvider, PropertiesSystem::IInitializeWithFile, PropertiesSystem::IInitializeWithStream};
     use windows_core::Interface;
     if *iid == <IUnknown as Interface>::IID {
         "IUnknown"
@@ -27,6 +27,10 @@ fn iid_name(iid: &GUID) -> &'static str {
         "IInitializeWithFile"
     } else if *iid == <IStorage as Interface>::IID {
         "IStorage"
+    } else if *iid == <IShellFolder as Interface>::IID {
+        "IShellFolder"
+    } else if *iid == <IPersistFolder as Interface>::IID {
+        "IPersistFolder"
     } else if *iid == <IPersistFile as Interface>::IID {
         "IPersistFile"
     } else {
@@ -65,7 +69,7 @@ impl IClassFactory_Impl for MpqClassFactory_Impl {
         use windows::Win32::System::Com::IPersistFile;
         use windows::Win32::System::Com::StructuredStorage::IStorage;
         use windows::Win32::UI::Shell::PropertiesSystem::{IInitializeWithFile, IInitializeWithStream};
-        use windows::Win32::UI::Shell::{IInitializeWithItem, IThumbnailProvider};
+        use windows::Win32::UI::Shell::{IPersistFolder, IShellFolder, IInitializeWithItem, IThumbnailProvider};
         use windows::core::{Error, IUnknown, Interface};
 
         // Log call and raw args first
@@ -119,6 +123,42 @@ impl IClassFactory_Impl for MpqClassFactory_Impl {
             if *riid == <IStorage as Interface>::IID {
                 log("IClassFactory::CreateInstance returning IStorage");
                 *ppv = unk.cast::<IStorage>()?.into_raw();
+                return Ok(());
+            }
+            if *riid == <IShellFolder as Interface>::IID {
+                log("IClassFactory::CreateInstance returning IShellFolder");
+                let res = unk.cast::<IShellFolder>();
+                match res {
+                    Ok(ptr) => {
+                        *ppv = ptr.into_raw();
+                        log("IClassFactory::CreateInstance: IShellFolder cast OK");
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        log(format!("IClassFactory::CreateInstance: IShellFolder cast ERR: {:?}", e));
+                        return Err(e);
+                    }
+                }
+            }
+            // Handle IShellFolder2 / Namespace Extension GUID {00021500-0000-0000-C000-000000000046}
+            if *riid == GUID::from_u128(0x00021500_0000_0000_C000_000000000046) {
+                log("IClassFactory::CreateInstance returning IShellFolder for namespace extension GUID");
+                let res = unk.cast::<IShellFolder>();
+                match res {
+                    Ok(ptr) => {
+                        *ppv = ptr.into_raw();
+                        log("IClassFactory::CreateInstance: IShellFolder2 cast OK");
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        log(format!("IClassFactory::CreateInstance: IShellFolder2 cast ERR: {:?}", e));
+                        return Err(e);
+                    }
+                }
+            }
+            if *riid == <IPersistFolder as Interface>::IID {
+                log("IClassFactory::CreateInstance returning IPersistFolder");
+                *ppv = unk.cast::<IPersistFolder>()?.into_raw();
                 return Ok(());
             }
             if *riid == <IPersistFile as Interface>::IID {

@@ -5,30 +5,48 @@ use mpq_folder_win::log::log;
 use mpq_folder_win::utils::guid::GuidExt;
 use mpq_folder_win::{CLSID_MPQ_FOLDER, DEFAULT_PROGID, FRIENDLY_NAME, SHELL_PREVIEW_HANDLER_CATID, SHELL_THUMB_HANDLER_CATID, SUPPORTED_EXTENSIONS};
 use std::path::PathBuf;
-use std::{env, fs, io};
+use std::{fs, io};
 use winreg::RegKey;
-use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_SET_VALUE};
+use winreg::enums::HKEY_LOCAL_MACHINE;
 
 pub fn install() -> io::Result<()> {
+    if !crate::utils::admin_check::is_running_as_admin() {
+        eprintln!("\n╔══════════════════════════════════════════════════════════════╗");
+        eprintln!("║  ERROR: Administrator rights required                        ║");
+        eprintln!("╚══════════════════════════════════════════════════════════════╝");
+        eprintln!("\nInstallation requires administrator privileges because:");
+        eprintln!("  • DLL must be copied to C:\\Program Files\\mpq-folder-win\\");
+        eprintln!("  • Registry keys must be written to HKLM (system-wide)");
+        eprintln!("\nPlease close this installer and:");
+        eprintln!("  • Right-click mpq-folder-win-installer.exe");
+        eprintln!("  • Select 'Run as administrator'\n");
+        log("Install: Not running as administrator. Aborting.");
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "Administrator rights required for installation"));
+    }
     if let Err(err) = install_inner() {
         log(format!("Install failed: {err}"));
+        return Err(err);
     }
+    println!("\n✓ Installation completed successfully!");
+    println!("  → DLL installed to C:\\Program Files\\mpq-folder-win\\");
+    println!("  → Registry keys written to HKLM");
+    println!("\nRecommended next steps:");
+    println!("  1. Restart Explorer (use menu option)");
+    println!("  2. Try opening an MPQ/W3M/W3X file\n");
     Ok(())
 }
 
 fn install_inner() -> io::Result<()> {
-    log("Install (current user, MPQ archive folder handler): start");
+    log("Install (admin, MPQ archive folder handler, HKLM): start");
 
+    // Program Files path
     let dll_path: PathBuf = {
-        let base = env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(r"C:\Users\Default\AppData\Local"));
-        let dir = base.join("mpq-folder-win");
-        fs::create_dir_all(&dir).map_err(|e| {
-            log(format!("Failed to create dir {}: {e}", dir.display()));
+        let base = PathBuf::from(r"C:\Program Files\mpq-folder-win");
+        fs::create_dir_all(&base).map_err(|e| {
+            log(format!("Failed to create dir {}: {e}", base.display()));
             e
         })?;
-        let path = dir.join("mpq_folder_win.dll");
+        let path = base.join("mpq_folder_win.dll");
         log(format!("Writing DLL {} ({} bytes)", path.display(), DLL_BYTES.len()));
         fs::write(&path, DLL_BYTES).map_err(|e| {
             log(format!("Failed to write DLL {}: {e}", path.display()));
@@ -38,7 +56,7 @@ fn install_inner() -> io::Result<()> {
         path
     };
 
-    let root = RegKey::predef(HKEY_CURRENT_USER);
+    let root = RegKey::predef(HKEY_LOCAL_MACHINE);
     let progid = DEFAULT_PROGID;
 
     let handler_clsid = CLSID_MPQ_FOLDER.to_braced_upper();
@@ -47,44 +65,7 @@ fn install_inner() -> io::Result<()> {
 
     log(format!("Using CLSID={} categories: THUMB={} PREVIEW={}", handler_clsid, thumb_catid, preview_catid));
 
-    let del_tree = |path: &str| -> io::Result<()> {
-        match root.delete_subkey_all(path) {
-            Ok(()) => log(format!("Pre-clean: removed {}", path)),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => log(format!("Pre-clean: missing {}", path)),
-            Err(e) => return Err(e),
-        }
-        Ok(())
-    };
-    let del_value = |key_path: &str, value_name: &str| -> io::Result<()> {
-        match root.open_subkey_with_flags(key_path, KEY_READ | KEY_SET_VALUE) {
-            Ok(key) => match key.delete_value(value_name) {
-                Ok(()) => log(format!("Pre-clean: removed value {}\\{}", key_path, value_name)),
-                Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                    log(format!("Pre-clean: value missing {}\\{}", key_path, value_name));
-                }
-                Err(e) => return Err(e),
-            },
-            Err(e) if e.kind() == io::ErrorKind::NotFound => log(format!("Pre-clean: missing {}", key_path)),
-            Err(e) => return Err(e),
-        }
-        Ok(())
-    };
-
-    log("Pre-clean: start");
-
-    del_tree(&format!(r"Software\Classes\CLSID\{}", handler_clsid))?;
-
-    for ext in SUPPORTED_EXTENSIONS {
-        for path in [format!(r"Software\Classes\{}\ShellEx\{}", ext, thumb_catid), format!(r"Software\Classes\{}\ShellEx\{}", ext, preview_catid), format!(r"Software\Classes\SystemFileAssociations\{}\ShellEx\{}", ext, thumb_catid), format!(r"Software\Classes\SystemFileAssociations\{}\ShellEx\{}", ext, preview_catid), format!(r"Software\Classes\{}\PersistentHandler", ext)] {
-            let _ = del_tree(&path);
-        }
-
-        del_value(r"Software\Microsoft\Windows\CurrentVersion\Explorer\ThumbnailHandlers", ext)?;
-    }
-
-    del_value(r"Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Approved", handler_clsid.as_str())?;
-
-    log("Pre-clean: done");
+    // No pre-cleaning of old keys (per user request)
 
     {
         log("Approving MPQ shell handler");
@@ -101,6 +82,14 @@ fn install_inner() -> io::Result<()> {
         inproc.set_default(dll_path.as_os_str())?;
         inproc.set("ThreadingModel", "Apartment")?;
         let _ = cls.sub(&format!(r"Implemented Categories\{}", thumb_catid))?;
+        // IShellFolder registration for Explorer integration
+    let shellfolder = cls.sub("ShellFolder")?;
+    shellfolder.set("Attributes", 0x20000000u32)?; // SFGAO_FOLDER
+    shellfolder.set("WantsFORPARSING", "")?;
+    shellfolder.set("HideOnDesktopPerUser", "")?;
+    shellfolder.set("SortOrderIndex", 66u32)?;
+    shellfolder.set("InfoTip", "Displays contents of MPQ archives")?;
+        let _ = cls.sub(&format!(r"Implemented Categories\{{00021493-0000-0000-C000-000000000046}}"))?; // CATID_ShellFolder
     }
 
     {
@@ -125,20 +114,25 @@ fn install_inner() -> io::Result<()> {
         shellex
             .sub("StorageHandler")?
             .set_default(handler_clsid.as_str())?;
+        // Namespace Extension for IShellFolder (critical for folder behavior)
+        shellex
+            .sub("{00021500-0000-0000-C000-000000000046}")?
+            .set_default(handler_clsid.as_str())?;
         pid.sub("PersistentHandler")?
             .set_default(handler_clsid.as_str())?;
+        pid.sub("DefaultIcon")?
+            .set_default("%SystemRoot%\\System32\\shell32.dll,3")?;
 
         let shell = pid.sub("shell")?;
         let open = shell.sub("open")?;
         open.set_default("Open")?;
-        open
-            .sub("command")?
-            .set_default(r#"%SystemRoot%\Explorer.exe /idlist,%I,%L"#)?;
+        open.sub("command")?
+            .set_default(r#""%SystemRoot%\Explorer.exe" "%1""#)?;
         let explore = shell.sub("explore")?;
         explore.set_default("Explore")?;
         explore
             .sub("command")?
-            .set_default(r#"%SystemRoot%\Explorer.exe /idlist,%I,%L"#)?;
+            .set_default(r#""%SystemRoot%\Explorer.exe" /e,"%1""#)?;
     }
 
     for ext in SUPPORTED_EXTENSIONS {
@@ -161,13 +155,17 @@ fn install_inner() -> io::Result<()> {
         ext_sx
             .sub("StorageHandler")?
             .set_default(handler_clsid.as_str())?;
+        // Namespace Extension for IShellFolder (critical for folder behavior)
+        ext_sx
+            .sub("{00021500-0000-0000-C000-000000000046}")?
+            .set_default(handler_clsid.as_str())?;
 
         let ext_shell = ext_key.sub("shell")?;
         let ext_open = ext_shell.sub("open")?;
         ext_open.set_default("Open")?;
         ext_open
             .sub("command")?
-            .set_default(r#"%SystemRoot%\Explorer.exe /idlist,%I,%L"#)?;
+            .set_default(r#""%SystemRoot%\Explorer.exe" "%1""#)?;
 
         let sfa_sx = Rk::open(&root, format!(r"Software\Classes\SystemFileAssociations\{}\ShellEx", ext))?;
         sfa_sx
@@ -193,6 +191,6 @@ fn install_inner() -> io::Result<()> {
     }
 
     notify_shell_assoc("install");
-    log("Installed in HKCU (MPQ archive handler). Restart Explorer to refresh.");
+    log("Installed in HKLM (MPQ archive handler). Restart Explorer to refresh.");
     Ok(())
 }

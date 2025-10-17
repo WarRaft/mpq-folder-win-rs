@@ -1,18 +1,21 @@
 # MPQ Folder for Windows
 
 Expose Blizzard MPQ archives (`.mpq`, `.w3m`, `.w3x`) as read‑only folders directly inside Windows Explorer.  
-This repository contains the COM shell extension (`mpq_folder_win.dll`) and a lightweight installer CLI that registers the handler for the current user.
+This repository contains the COM shell extension (`mpq_folder_win.dll`) and a lightweight installer CLI that registers the handler system-wide (requires administrator rights).
 
-> **Status:** early prototype. Real MPQ parsing is not implemented yet – the handler always presents a placeholder `TEST.txt` file so the Explorer integration pipeline can be exercised end-to-end.
+
+> Status: initial Explorer integration is implemented. Real MPQ parsing is deferred; for now, each archive displays a read‑only placeholder file `TEST.txt` so the shell plumbing and logging can be exercised end‑to‑end.
+> 
+> **Important:** Installation now requires administrator rights. All registry keys are written to HKLM (HKEY_LOCAL_MACHINE), and the DLL is copied to `C:\Program Files\mpq-folder-win\`. Per-user installation is no longer supported.
 
 ---
 
 ## What You Get Today
 
 - **Explorer integration:** MPQ archives appear as folders; you can drill into them just like ZIP files.
-- **Stub content:** until MPQ parsing lands, the handler shows a single `TEST.txt` with a short explanation of the placeholder state.
+- **Placeholder content only:** One file `TEST.txt` is exposed inside every archive for now.
 - **COM-friendly plumbing:** Implements `IStorage`, `IInitializeWith*`, and `IThumbnailProvider` so the eventual archive reader can plug in without touching registration code.
-- **Per-user installer:** the `mpq-folder-win-installer.exe` CLI writes registry entries under `HKCU`, copies the DLL into `%LOCALAPPDATA%\mpq-folder-win\`, and can clear Explorer caches or toggle logging.
+- **System-wide installer:** the `mpq-folder-win-installer.exe` CLI writes registry entries under `HKLM` (HKEY_LOCAL_MACHINE), copies the DLL into `C:\Program Files\mpq-folder-win\`, and can clear Explorer caches or toggle logging. **Administrator rights are required.**
 
 ---
 
@@ -45,14 +48,15 @@ Artifacts land in `bin/`.
 
 ## Installing / Uninstalling
 
+
 1. Copy `mpq-folder-win-installer.exe` to your Windows machine (keep `mpq_folder_win.dll` alongside if you built manually).
-2. Run the installer executable:
-   - `Install (current user)` writes the DLL into `%LOCALAPPDATA%\mpq-folder-win\`, registers the COM class under `HKCU`, and associates `.mpq/.w3m/.w3x`.
-   - `Uninstall` removes the registry keys for the handler.
+2. **Run the installer as administrator** (right-click → Run as administrator):
+   - `Install` writes the DLL into `C:\Program Files\mpq-folder-win\`, registers the COM class and all associations system-wide (HKLM), and associates `.mpq/.w3m/.w3x`.
+   - `Uninstall` removes the registry keys for the handler (also requires admin rights).
    - Optional helpers are available for toggling logging, clearing caches, and restarting Explorer.
 3. **Restart Explorer** (the installer has a menu option) to pick up the new handler.
 
-Because registration lives under `HKCU`, no administrator privileges are required.
+**Administrator privileges are required for installation and removal.**
 
 ---
 
@@ -80,11 +84,13 @@ Contributions are welcome – feel free to open issues or PRs on GitHub.
 
 ---
 
+
 ## Troubleshooting
 
 - **Installer fails to build:** ensure the `x86_64-pc-windows-gnu` target is installed. The build script prints the exact command it runs.
+- **Installer fails with permission error:** You must run the installer as administrator to write to HKLM and Program Files.
 - **Explorer still shows the old handler:** run the installer’s “Clear thumbnail cache” and “Restart Explorer” options.
-- **Placeholder file only:** expected until full MPQ decoding is merged.
+- **Placeholder file only:** Expected at this stage. MPQ parsing and real file enumeration will be added later.
 
 ---
 
