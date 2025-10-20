@@ -1,1 +1,2 @@
-pub mod guid;
+// Utility modules
+// (empty for now - add utilities as needed)

@@ -1,12 +1,9 @@
-use crate::actiions::clear_cache::clear_cache;
 use crate::actiions::install::install;
 use crate::actiions::restart_explorer::restart_explorer;
-use crate::actiions::toggle_logging::toggle_logging;
 use crate::actiions::uninstall::uninstall;
 use dialoguer::Select;
 use dialoguer::console::{Term, style};
 use dialoguer::theme::ColorfulTheme;
-use mpq_folder_win::log::log_enabled;
 use std::io;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -14,8 +11,6 @@ pub enum Action {
     Install,
     Uninstall,
     RestartExplorer,
-    ClearThumbCache,
-    ToggleLogging,
     Exit,
 }
 
@@ -33,26 +28,27 @@ fn theme() -> ColorfulTheme {
 }
 
 pub fn action_choose() -> io::Result<(Action, String)> {
-    let mut actions = vec![Action::Install, Action::Uninstall, Action::RestartExplorer, Action::ClearThumbCache];
+    let actions = vec![
+        Action::Install,
+        Action::Uninstall,
+        Action::RestartExplorer,
+        Action::Exit,
+    ];
 
-    let mut labels: Vec<String> = vec!["Install (requires admin)".into(), "Uninstall (requires admin)".into(), "Restart Explorer".into(), "Clear thumbnail cache".into()];
-
-    let logging_enabled = log_enabled();
-    actions.push(Action::ToggleLogging);
-    labels.push(if logging_enabled { "Disable log" } else { "Enable log" }.into());
-
-    actions.push(Action::Exit);
-    labels.push("Exit".into());
-
-    let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+    let labels = vec![
+        "Install (requires admin)",
+        "Uninstall (requires admin)",
+        "Restart Explorer",
+        "Exit",
+    ];
 
     let idx = Select::with_theme(&theme())
-        .with_prompt("MPQ Folder Handler installer")
-        .items(&label_refs)
+        .with_prompt("MPQ Archive Viewer Installer")
+        .items(&labels)
         .default(0)
         .interact_on(&Term::stdout())?;
 
-    Ok((actions[idx], labels[idx].clone()))
+    Ok((actions[idx], labels[idx].to_string()))
 }
 
 pub fn action_execute(action: Action) -> io::Result<()> {
@@ -60,8 +56,6 @@ pub fn action_execute(action: Action) -> io::Result<()> {
         Action::Install => install(),
         Action::Uninstall => uninstall(),
         Action::RestartExplorer => restart_explorer(),
-        Action::ClearThumbCache => clear_cache(),
-        Action::ToggleLogging => toggle_logging(),
         Action::Exit => Ok(()),
     }
 }

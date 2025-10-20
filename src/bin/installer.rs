@@ -3,9 +3,8 @@
 use mpq_folder_win::log::log;
 use std::{env, io, io::Write};
 
-// Embedded DLL that you copy into ./bin/ at build time.
-// The EXE will re-materialize it under %LOCALAPPDATA%\mpq-folder-win\
-static DLL_BYTES: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/bin/mpq_folder_win.dll"));
+// Embedded viewer EXE that you copy into ./bin/ at build time.
+static EXE_BYTES: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/bin/mpq-viewer.exe"));
 
 // Single source of truth from the library (your keys module)
 use crate::actiions::dialog::{Action, action_choose, action_execute};

@@ -84,6 +84,55 @@ fn generate_ico(src_png: &Path, out_ico: &Path) -> io::Result<()> {
 }
 
 fn main() {
+    // Enable WinFsp delay-loading
+    winfsp::build::winfsp_link_delayload();
+    
+    // Set build timestamp for embedding in EXE
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    
+    // Format as readable datetime (simple UTC approximation)
+    let total_secs = timestamp;
+    let days = total_secs / 86400;
+    let epoch_date = 719468; // days from 0000-01-01 to 1970-01-01
+    let total_days = epoch_date + days as i32;
+    
+    // Simple date calculation from days since epoch
+    // Proper date calculation from UNIX timestamp
+    const SECONDS_PER_DAY: u64 = 86400;
+    let days_since_epoch = total_secs / SECONDS_PER_DAY;
+    
+    // Calculate year (accounting for leap years)
+    let mut year = 1970;
+    let mut days_remaining = days_since_epoch;
+    loop {
+        let days_in_year = if (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0) { 366 } else { 365 };
+        if days_remaining < days_in_year { break; }
+        days_remaining -= days_in_year;
+        year += 1;
+    }
+    
+    // Calculate month and day
+    let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+    let days_in_month = [31, if is_leap {29} else {28}, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let mut month = 1;
+    let mut day_of_month = days_remaining as u32 + 1;
+    for &days in &days_in_month {
+        if day_of_month <= days { break; }
+        day_of_month -= days;
+        month += 1;
+    }
+    
+    let secs_today = total_secs % SECONDS_PER_DAY;
+    let hour = secs_today / 3600;
+    let min = (secs_today % 3600) / 60;
+    let sec = secs_today % 60;
+    
+    let datetime = format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC", year, month, day_of_month, hour, min, sec);
+    println!("cargo:rustc-env=BUILD_TIMESTAMP={}", datetime);
+    
     // Resolve repo root and the log path (allow overriding via env).
     let repo = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let report_path = env::var_os("MPQ_BUILD_REPORT")

@@ -16,6 +16,9 @@ use windows::{Win32::System::Console::GetConsoleWindow, Win32::System::Diagnosti
 use winreg::RegKey;
 use winreg::enums::HKEY_CURRENT_USER;
 
+// Build timestamp (set at compile time)
+const BUILD_TIMESTAMP: &str = env!("BUILD_TIMESTAMP");
+
 // Registry location (per-user)
 const REG_SUBKEY: &str = r"Software\mpq-folder-win";
 const REG_VALUE: &str = "LogEnabled";
@@ -104,12 +107,19 @@ fn ensure_init() {
     INIT_ONCE.call_once(|| {
         let enabled = read_registry_flag_once().unwrap_or(false);
         LOG_ON.store(enabled, Ordering::Relaxed);
-        // Announce init state (always visible in DebugView)
-        ods_immediate(if enabled {
-            "[mpq-folder] logging init: HKCU\\Software\\mpq-folder-win\\LogEnabled = 1"
+        // Announce init state with build timestamp (always visible in DebugView)
+        let msg = if enabled {
+            format!(
+                "[mpq-folder] logging init: HKCU\\Software\\mpq-folder-win\\LogEnabled = 1 | BUILD: {}",
+                BUILD_TIMESTAMP
+            )
         } else {
-            "[mpq-folder] logging init: HKCU\\Software\\mpq-folder-win\\LogEnabled = 0 (or missing)"
-        });
+            format!(
+                "[mpq-folder] logging init: HKCU\\Software\\mpq-folder-win\\LogEnabled = 0 (or missing) | BUILD: {}",
+                BUILD_TIMESTAMP
+            )
+        };
+        ods_immediate(&msg);
     });
 }
 

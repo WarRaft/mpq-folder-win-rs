@@ -1,11 +1,9 @@
 use crate::utils::notify_shell_assoc::notify_shell_assoc;
-
 use mpq_folder_win::log::log;
-use mpq_folder_win::utils::guid::GuidExt;
-use mpq_folder_win::{CLSID_MPQ_FOLDER, DEFAULT_PROGID, SHELL_PREVIEW_HANDLER_CATID, SHELL_THUMB_HANDLER_CATID, SUPPORTED_EXTENSIONS};
-use std::io;
+use mpq_folder_win::{DEFAULT_PROGID, SUPPORTED_EXTENSIONS};
+use std::{fs, io};
 use winreg::RegKey;
-use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_READ, KEY_SET_VALUE};
+use winreg::enums::HKEY_LOCAL_MACHINE;
 
 pub fn uninstall() -> io::Result<()> {
     if !crate::utils::admin_check::is_running_as_admin() {
@@ -34,76 +32,32 @@ pub fn uninstall() -> io::Result<()> {
 }
 
 fn uninstall_inner() -> io::Result<()> {
-    log("Uninstall (admin, HKLM): start — removing shell bindings.");
+    log("Uninstall: Removing MPQ Archive Viewer");
 
     let root = RegKey::predef(HKEY_LOCAL_MACHINE);
-    let progid = DEFAULT_PROGID;
+    let classes = root.open_subkey(r"SOFTWARE\Classes")?;
 
-    let handler_clsid = CLSID_MPQ_FOLDER.to_braced_upper();
-    let thumb_catid = SHELL_THUMB_HANDLER_CATID.to_braced_upper();
-    let preview_catid = SHELL_PREVIEW_HANDLER_CATID.to_braced_upper();
+    // Remove ProgID
+    log(format!("Removing ProgID: {}", DEFAULT_PROGID));
+    let _ = classes.delete_subkey_all(DEFAULT_PROGID);
 
-    let del_tree = |path: &str| -> io::Result<()> {
-        match root.delete_subkey_all(path) {
-            Ok(()) => log(format!("Removed key tree: {}", path)),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                log(format!("Key missing (skip): {}", path));
-            }
-            Err(e) => return Err(e),
-        }
-        Ok(())
-    };
-
-    let del_value = |key_path: &str, value_name: &str| -> io::Result<()> {
-        match root.open_subkey_with_flags(key_path, KEY_READ | KEY_SET_VALUE) {
-            Ok(key) => match key.delete_value(value_name) {
-                Ok(()) => log(format!("Removed value: {} \\ {}", key_path, value_name)),
-                Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                    log(format!("Value missing (skip): {} \\ {}", key_path, value_name));
-                }
-                Err(e) => return Err(e),
-            },
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                log(format!("Key missing (skip): {}", key_path));
-            }
-            Err(e) => return Err(e),
-        }
-        Ok(())
-    };
-
-    let remove_shellex = |root_path: &str, cat: &str| -> io::Result<()> {
-        let target = format!(r"{}\ShellEx\{}", root_path, cat);
-        del_tree(&target)
-    };
-
-    let approved_path = r"Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Approved";
-    del_value(approved_path, handler_clsid.as_str())?;
-
-    // ProgID bindings
-    remove_shellex(&format!(r"Software\Classes\{}", progid), &thumb_catid)?;
-    remove_shellex(&format!(r"Software\Classes\{}", progid), &preview_catid)?;
-    remove_shellex(&format!(r"Software\Classes\{}", progid), "StorageHandler")?;
-    del_value(&format!(r"Software\Classes\{}", progid), "CLSID")?;
-    del_value(&format!(r"Software\Classes\{}", progid), "FriendlyTypeName")?;
-    del_tree(&format!(r"Software\Classes\{}\PersistentHandler", progid))?;
-    del_tree(&format!(r"Software\Classes\{}\shell", progid))?;
-
+    // Remove file associations
     for ext in SUPPORTED_EXTENSIONS {
-        remove_shellex(&format!(r"Software\Classes\{}", ext), &thumb_catid)?;
-        remove_shellex(&format!(r"Software\Classes\{}", ext), &preview_catid)?;
-        remove_shellex(&format!(r"Software\Classes\{}", ext), "StorageHandler")?;
-        del_tree(&format!(r"Software\Classes\{}\shell", ext))?;
-        remove_shellex(&format!(r"Software\Classes\SystemFileAssociations\{}", ext), &thumb_catid)?;
-        remove_shellex(&format!(r"Software\Classes\SystemFileAssociations\{}", ext), &preview_catid)?;
-        remove_shellex(&format!(r"Software\Classes\SystemFileAssociations\{}", ext), "StorageHandler")?;
-
-        del_value(r"Software\Microsoft\Windows\CurrentVersion\Explorer\ThumbnailHandlers", ext)?;
-        del_tree(&format!(r"Software\Classes\{}\PersistentHandler", ext))?;
+        log(format!("Removing extension: {}", ext));
+        let _ = classes.delete_subkey_all(ext);
     }
 
-    del_tree(&format!(r"Software\Classes\CLSID\{}", handler_clsid))?;
+    // Remove installed files
+    let install_dir = r"C:\Program Files\mpq-folder-win";
+    log(format!("Removing directory: {}", install_dir));
+    if let Err(e) = fs::remove_dir_all(install_dir) {
+        if e.kind() != io::ErrorKind::NotFound {
+            eprintln!("Warning: Could not remove directory: {}", e);
+            eprintln!("You may need to delete it manually: {}", install_dir);
+        }
+    }
 
-    notify_shell_assoc("uninstall");
-    log("Uninstall completed (HKLM). Thumbnail preview bindings removed.");
+    notify_shell_assoc();
+    log("Uninstall completed");
     Ok(())
 }
