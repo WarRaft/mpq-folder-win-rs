@@ -163,7 +163,6 @@ Implements `FileSystemContext` trait with:
 2. **Add compression support** (ZLIB, BZ2, etc.)
 3. **Optimize file reading** (caching, buffering)
 4. **Add write support** (if needed)
-5. **Thumbnail provider** (integrate with existing GDI code)
 
 ## 🆚 COM vs WinFsp Comparison
 
@@ -184,6 +183,7 @@ Implements `FileSystemContext` trait with:
 - Complex CLSID registration
 - Shell extension handlers
 - DLL-based architecture
+- Thumbnail provider integration
 
 ### Changed:
 - Now builds **EXE** instead of **DLL**
@@ -191,7 +191,6 @@ Implements `FileSystemContext` trait with:
 - No longer integrates into Explorer shell
 
 ### Kept:
-- Thumbnail provider (can be kept separately as DLL if needed)
 - Archive parsing logic
 - Logging system
 - Installer framework

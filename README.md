@@ -110,7 +110,6 @@ Artifacts will be in `target/release/`:
 - [ ] Integrate real MPQ parsing library (replace placeholder)
 - [ ] Add compression support (ZLIB, BZIP2)
 - [ ] Implement nested folder support inside archives
-- [ ] Add thumbnail provider (optional COM component)
 - [ ] Performance optimizations (caching, buffering)
 
 Contributions welcome – open issues or PRs on GitHub!

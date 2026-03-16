@@ -124,6 +124,5 @@ After successful build and test:
 1. Integrate real MPQ parser (replace placeholder in `src/archive.rs`)
 2. Add compression support (ZLIB, BZIP2, etc.)
 3. Optimize performance (caching, buffering)
-4. Add thumbnail provider integration (optional)
 
 See `WINFSP_MIGRATION.md` for more details about the architecture.
